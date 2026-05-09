@@ -1,0 +1,1611 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Highlighter } from "@/components/magicui/highlighter";
+import UnlockProButton from "@/components/UnlockProButton";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, Plus, Camera, Image, FileUp, X, GraduationCap, ShoppingCart, ArrowDown, ChevronDown, ChevronLeft, Star, Pencil, Trash2, FolderPlus, Globe, Lock, Share2, MoreVertical, Pin, UserPlus, Copy, Mail, Link2, Users, Loader2, NotebookPen, ClipboardList, CalendarDays, Timer, Wrench, Lightbulb, Mic2, Sparkles, BookOpen } from "lucide-react";
+import { toast } from "sonner";
+import { useNavigate, useLocation } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import AppSidebar from "@/components/AppSidebar";
+import AppLayout from "@/layouts/AppLayout";
+import ChatMessage from "@/components/ChatMessage";
+import AnimatedInput from "@/components/AnimatedInput";
+import ThinkingLoader from "@/components/ThinkingLoader";
+import FancyButton from "@/components/FancyButton";
+import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
+
+import { streamChat } from "@/lib/streamChat";
+import ConnectorsDialog from "@/components/ConnectorsDialog";
+import GlowButton from "@/components/GlowButton";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger } from
+"@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription } from
+"@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  images?: string[];
+  products?: ProductResult[];
+  attachedImages?: string[];
+  attachedFiles?: {name: string;type: string;}[];
+  liked?: boolean | null;
+  id?: string;
+  user_id?: string | null;
+  senderName?: string | null;
+  senderAvatar?: string | null;
+}
+
+interface ProductResult {
+  title: string;
+  price: string;
+  image?: string;
+  link?: string;
+  seller?: string;
+  rating?: string | null;
+  delivery?: string | null;
+}
+
+type ChatMode = "normal" | "learning" | "shopping" | "deep-research";
+
+const MODE_PROMPTS: Record<ChatMode, string> = {
+  normal: "",
+  learning: "You are in Learning Mode. Explain everything step by step with examples, analogies, and clear breakdowns. Make complex topics easy to understand. Use bullet points, numbered steps, and structured format.",
+  shopping: "You are in Shopping Mode. Help the user find the best products, compare prices, suggest alternatives, and provide purchase recommendations. Include pros/cons when comparing items.",
+  "deep-research": ""
+};
+
+const PegtopIcon = ({ className }: {className?: string;}) =>
+<svg className={className} width="28" height="28" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <path d="M50 5 L60 40 L95 50 L60 60 L50 95 L40 60 L5 50 L40 40 Z" fill="currentColor" />
+  </svg>;
+
+
+const MEGSY_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025";
+
+const normalizeStatusLabel = (status: string) => {
+  if (!status.trim()) return "";
+  const lower = status.toLowerCase();
+  const blocklist = ["web_search", "browse_website", "shopping_search", "convert_currency", "generate_image", "generate_video", "generate_voice", "canva_create_slides", "running ", "tool_call", "function_call"];
+  if (blocklist.some(b => lower.includes(b))) return "Working on your request...";
+  if (/https?:\/\//i.test(status)) return "Searching the web...";
+  if (/writing the report/i.test(lower)) return "Writing the final report...";
+  if (/analyzing products/i.test(lower)) return "Comparing the best options...";
+  if (/searching for products|searching stores/i.test(lower)) return "Searching stores...";
+  if (/searching:|gathering/i.test(lower)) return "Searching the web...";
+  if (/found\s+\d+\s+(results|products)/i.test(lower)) return "Reviewing the results...";
+  if (/search completed/i.test(lower)) return "Search completed.";
+  if (/browsing completed/i.test(lower)) return "Browsing completed.";
+  if (/reviewing/i.test(lower)) return "Reviewing the sources...";
+  if (/opening|starting|browser|megsy computer|navigat|clicking|scrolling|extracting|smart browser/i.test(lower)) return "Searching the web...";
+  return "Working on your request...";
+};
+
+const ChatPage = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationTitle, setConversationTitle] = useState("");
+  const [searchEnabled, setSearchEnabled] = useState(true);
+  const [computerUseEnabled, setComputerUseEnabled] = useState(true);
+  const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [attachedFiles, setAttachedFiles] = useState<{name: string;type: string;data: string;}[]>([]);
+  const [searchStatus, setSearchStatus] = useState<string>("");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareMode, setShareMode] = useState<"private" | "public">("public");
+  const [isShared, setIsShared] = useState(false);
+  const [shareId, setShareId] = useState<string | null>(null);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [isPinned, setIsPinned] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [pendingQuestions, setPendingQuestions] = useState<{title: string;options: string[];allowText?: boolean;}[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [members, setMembers] = useState<{ id: string; email: string; role: string; name?: string; avatar?: string }[]>([]);
+  const [conversationOwnerId, setConversationOwnerId] = useState<string | null>(null);
+  const [chatUserId, setChatUserId] = useState<string | null>(null);
+  const [typingUsers, setTypingUsers] = useState<{ id: string; name: string; avatar: string | null }[]>([]);
+  const [remoteAiBusy, setRemoteAiBusy] = useState<{ name: string } | null>(null);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
+  const [selectedModel, setSelectedModel] = useState<AgentModel | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
+  const [userName, setUserName] = useState<string>("");
+  const [plusView, setPlusView] = useState<"main" | "tools">("main");
+  const [userIntegrations, setUserIntegrations] = useState<string[]>([]);
+
+  // Fetch user info for memory + welcome message
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      setChatUserId(user.id);
+      const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+      const name = (profile as any)?.display_name || (user.user_metadata?.full_name as string) || (user.email?.split("@")[0] ?? "");
+      const firstName = (name || "").split(/\s+/)[0];
+      setUserName(firstName);
+    });
+  }, []);
+
+  // Reset plus menu sub-view whenever it closes
+  useEffect(() => {
+    if (!plusMenuOpen) setPlusView("main");
+  }, [plusMenuOpen]);
+
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distFromBottom > 200);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  // Only auto-scroll on user's own new message, not during streaming
+  const lastMsgCountRef = useRef(0);
+  useEffect(() => {
+    const prevCount = lastMsgCountRef.current;
+    lastMsgCountRef.current = messages.length;
+    // Scroll only when user sends a new message (count increased and last is user)
+    if (messages.length > prevCount && messages.length > 0 && messages[messages.length - 1].role === "user") {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages.length]);
+
+  const createOrUpdateConversation = async (firstMessage: string) => {
+    if (conversationId) return conversationId;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const title = firstMessage.slice(0, 50) || "New Chat";
+    const { data } = await supabase.from("conversations").insert({ title, mode: "chat", model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
+    if (data) {setConversationId(data.id);setConversationTitle(title);return data.id;}
+    return null;
+  };
+
+  const saveMessage = async (convId: string, role: string, content: string, images?: string[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = await supabase.from("messages").insert({ conversation_id: convId, role, content, images: images || null, user_id: user?.id || null } as any).select("id").single();
+    return (data as any)?.id as string | undefined;
+  };
+
+  // Stable color palette for member bubbles
+  const MEMBER_COLORS = [
+    { bg: "#2563eb", text: "#ffffff" }, // blue
+    { bg: "#10b981", text: "#ffffff" }, // emerald
+    { bg: "#f59e0b", text: "#1a1a1a" }, // amber
+    { bg: "#ef4444", text: "#ffffff" }, // red
+    { bg: "#8b5cf6", text: "#ffffff" }, // violet
+    { bg: "#ec4899", text: "#ffffff" }, // pink
+    { bg: "#06b6d4", text: "#ffffff" }, // cyan
+    { bg: "#84cc16", text: "#1a1a1a" }, // lime
+  ];
+  const colorForUser = useCallback((userId?: string | null) => {
+    if (!userId) return null;
+    let h = 0;
+    for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
+    return MEMBER_COLORS[h % MEMBER_COLORS.length];
+  }, []);
+
+  const handleLikeMessage = useCallback((index: number, liked: boolean | null) => {
+    setMessages((prev) => prev.map((m, i) => i === index ? { ...m, liked } : m));
+  }, []);
+
+  const loadConversation = async (id: string) => {
+    setConversationId(id);
+    setSearchStatus("");
+    setPendingQuestions([]);
+    const { data: conv } = await supabase.from("conversations").select("title, is_shared, share_id, is_pinned, mode, user_id").eq("id", id).single();
+    if (conv) {
+      setConversationTitle(conv.title || "Untitled");
+      setIsShared(conv.is_shared || false);
+      setShareId(conv.share_id || null);
+      setShareMode(conv.is_shared ? "public" : "private");
+      setIsPinned(!!conv.is_pinned);
+      setConversationOwnerId((conv as any).user_id || null);
+      const m = (conv as any).mode as string | undefined;
+      if (m === "research") setChatMode("deep-research");
+      else if (m === "learning") setChatMode("learning");
+      else if (m === "shopping") setChatMode("shopping");
+      else setChatMode("normal");
+    }
+    // Bump conversation to top of user's list (works for owner; safe-no-op for members)
+    supabase.from("conversations").update({ updated_at: new Date().toISOString() } as any).eq("id", id).then(() => {});
+    const { data: msgs } = await supabase.from("messages").select("*").eq("conversation_id", id).order("created_at", { ascending: true });
+    if (msgs) {
+      const senderIds = Array.from(new Set(msgs.map((m: any) => m.user_id).filter(Boolean)));
+      const senderMap: Record<string, { name: string | null; avatar: string | null }> = {};
+      if (senderIds.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("id, display_name, avatar_url").in("id", senderIds as string[]);
+        (profs || []).forEach((p: any) => { senderMap[p.id] = { name: p.display_name, avatar: p.avatar_url }; });
+      }
+      setMessages(msgs.map((m: any) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        images: m.images || undefined,
+        liked: m.liked,
+        id: m.id,
+        user_id: m.user_id,
+        senderName: m.user_id ? senderMap[m.user_id]?.name : null,
+        senderAvatar: m.user_id ? senderMap[m.user_id]?.avatar : null,
+      })));
+      setTimeout(() => scrollToBottom(), 150);
+    }
+  };
+
+  const handleCancel = () => {
+    if (abortControllerRef.current) {abortControllerRef.current.abort();abortControllerRef.current = null;}
+    setIsLoading(false);setIsThinking(false);setSearchStatus("");
+    setMessages((prev) => prev[prev.length - 1]?.role === "assistant" && !prev[prev.length - 1]?.content ? prev.slice(0, -1) : prev);
+  };
+
+  const handleModeChange = (mode: ChatMode) => {
+    setChatMode((prev) => prev === mode ? "normal" : mode);
+    if (mode === "deep-research") {
+      setSearchEnabled(true);
+    } else if (mode !== "normal") {
+      setSearchEnabled(false);
+    }
+    setPlusMenuOpen(false);
+  };
+
+  const handleSearchToggle = () => {
+    setSearchEnabled(!searchEnabled);
+    if (!searchEnabled) setChatMode("normal");
+    setPlusMenuOpen(false);
+  };
+
+  const handleStructuredAction = useCallback((text: string) => {
+    if (text.startsWith("Connect:")) {
+      setConnectorsOpen(true);
+      return;
+    }
+    setInput(text);
+    setTimeout(() => {
+      setInput(text);
+      void sendWithTextRef.current?.(text);
+    }, 50);
+  }, []);
+
+  // Fix: detect smart questions from the LATEST assistant message when streaming completes
+  useEffect(() => {
+    if (isLoading) return; // Wait until streaming is done
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== "assistant") return;
+    
+    const jsonBlockRegex = /```json\s*\n?([\s\S]*?)\n?```/g;
+    let match;
+    const questions: {title: string;options: string[];allowText?: boolean;}[] = [];
+    while ((match = jsonBlockRegex.exec(lastMsg.content)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.type === "questions" && parsed.questions) {
+          questions.push(...parsed.questions);
+        }
+      } catch {}
+    }
+    if (questions.length > 0) setPendingQuestions(questions);
+  }, [messages, isLoading]);
+
+  const handleQuestionAnswer = (answer: string) => {
+    setPendingQuestions([]);
+    handleSendWithText(answer);
+  };
+
+  const handleQuestionSkip = () => {
+    setPendingQuestions([]);
+  };
+
+  const isSubmittingRef = useRef(false);
+  const sendWithTextRef = useRef<(overrideText?: string) => Promise<void>>();
+
+  const ownInsertedIdsRef = useRef<Set<string>>(new Set());
+
+  const handleSendWithText = async (overrideText?: string) => {
+    const text = overrideText || input;
+    if (!text.trim() && attachedFiles.length === 0) return;
+    if (isLoading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+
+    const imageAttachments = attachedFiles.filter((f) => f.type === "image");
+    const fileAttachments = attachedFiles.filter((f) => f.type === "file");
+
+    const userMsg: Message = {
+      role: "user",
+      content: text || (attachedFiles.length > 0 ? `[${attachedFiles.length} file(s) attached]` : ""),
+      attachedImages: imageAttachments.map((f) => f.data),
+      attachedFiles: fileAttachments.map((f) => ({ name: f.name, type: f.type }))
+    };
+    setMessages((prev) => [...prev, userMsg, { role: "assistant", content: "" }]);
+    const userInput = text;
+    setInput("");
+    const currentFiles = [...attachedFiles];
+    setAttachedFiles([]);
+    setIsLoading(true);setIsThinking(true);
+    setPendingQuestions([]);
+
+    const conversationPromise = createOrUpdateConversation(userInput || "File analysis").catch(() => null);
+    void conversationPromise.then(async (resolvedConversationId) => {
+      if (!resolvedConversationId) return;
+      const insertedId = await saveMessage(resolvedConversationId, "user", userInput || `[${currentFiles.length} file(s) attached]`);
+      if (insertedId) {
+        ownInsertedIdsRef.current.add(insertedId);
+        // Attach id to last user message locally so dedup by id works for echo
+        setMessages((prev) => {
+          const idx = (() => { for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].role === "user" && !prev[i].id) return i; } return -1; })();
+          if (idx < 0) return prev;
+          const next = [...prev]; next[idx] = { ...next[idx], id: insertedId, user_id: chatUserId || undefined }; return next;
+        });
+      }
+    });
+
+    // Broadcast that AI is now busy in this conversation
+    if (presenceChannelRef.current && chatUserId) {
+      presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, name: userName, busy: true } });
+    }
+
+    let assistantContent = "";
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    let searchImages: string[] = [];
+    let streamedProducts: ProductResult[] = [];
+
+    const isToolMarkerChunk = (chunk: string) => {
+      const trimmed = chunk.trim();
+      return [
+        "BROWSE_WEBSITE",
+        "WEB_SEARCH",
+        "SHOPPING_SEARCH",
+        "CONVERT_CURRENCY",
+        "GENERATE_IMAGE",
+        "GENERATE_VIDEO",
+        "GENERATE_VOICE",
+        "CANVA_CREATE_SLIDES",
+      ].includes(trimmed);
+    };
+
+    const updateAssistant = (chunk: string) => {
+      if (isToolMarkerChunk(chunk)) return;
+      setIsThinking(false);setSearchStatus("");
+      assistantContent += chunk;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent, products: m.products ?? streamedProducts } : m);
+        return [...prev, { role: "assistant", content: assistantContent, products: streamedProducts }];
+      });
+    };
+
+    const allMessages = [...messages, userMsg].map((m) => {
+      const imgs = m.attachedImages || [];
+      if (imgs.length > 0) {
+        // IMPORTANT: Put text FIRST so the model sees the user's question, then images
+        const content: any[] = [];
+        if (m.content && m.content.trim()) {
+          content.push({ type: "text" as const, text: m.content });
+        }
+        imgs.forEach((imgData) => {
+          content.push({ type: "image_url" as const, image_url: { url: imgData } });
+        });
+        // Ensure there's always at least text content
+        if (content.length === 0) {
+          content.push({ type: "text" as const, text: "Please analyze this image." });
+        }
+        return { role: m.role, content };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    if (currentFiles.some((f) => f.type === "file")) {
+      const fileTexts = currentFiles.filter((f) => f.type === "file").map((f) => `--- File: ${f.name} ---\n${f.data}`).join("\n\n");
+      const lastMsg = allMessages[allMessages.length - 1];
+      if (typeof lastMsg.content === "string") {
+        lastMsg.content = `${lastMsg.content}\n\n${fileTexts}`;
+      }
+    }
+
+    // Mode prompts are now handled server-side via chatMode parameter
+    const isDeepResearch = chatMode === "deep-research";
+
+    await streamChat({
+      messages: allMessages, model: MEGSY_MODEL, searchEnabled: searchEnabled || isDeepResearch,
+      deepResearch: isDeepResearch,
+      chatMode: chatMode,
+      user_id: chatUserId || undefined,
+      computerUseEnabled,
+      activeAgent: chatMode !== "normal" ? chatMode : (selectedAgent?.id || undefined),
+      selectedModel: selectedModel ? { id: selectedModel.id, cost: selectedModel.cost } : undefined,
+      onDelta: updateAssistant,
+      onImages: (imgs) => {searchImages = imgs;},
+      onProducts: (products) => {
+        streamedProducts = products;
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role !== "assistant") return prev;
+          return prev.map((m, i) => i === prev.length - 1 ? { ...m, products } : m);
+        });
+      },
+      onStatus: (status) => {
+        const normalizedStatus = normalizeStatusLabel(status);
+        if (normalizedStatus) {
+          setSearchStatus(normalizedStatus);
+          setIsThinking(true);
+        }
+      },
+      onBrowser: () => {
+        // Browser state no longer tracked in UI
+      },
+      onDone: async () => {
+        setIsLoading(false);setIsThinking(false);setSearchStatus("");
+        isSubmittingRef.current = false;
+        if (presenceChannelRef.current && chatUserId) {
+          presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, busy: false } });
+        }
+        if (!assistantContent && searchImages.length === 0 && streamedProducts.length === 0) {
+          setMessages((prev) => prev[prev.length - 1]?.role === "assistant" && !prev[prev.length - 1]?.content ? prev.slice(0, -1) : prev);
+        }
+        const resolvedConversationId = await conversationPromise;
+        if (resolvedConversationId && assistantContent) {
+          const aId = await saveMessage(resolvedConversationId, "assistant", assistantContent, searchImages.length > 0 ? searchImages : undefined);
+          if (aId) ownInsertedIdsRef.current.add(aId);
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
+            return prev.map((m, i) => i === prev.length - 1 ? {
+              ...m,
+              id: aId || m.id,
+              images: searchImages.length > 0 ? searchImages : m.images,
+              products: streamedProducts.length > 0 ? streamedProducts : m.products,
+            } : m);
+          });
+          const dbMode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
+          await supabase.from("conversations").update({ updated_at: new Date().toISOString(), mode: dbMode } as any).eq("id", resolvedConversationId);
+        }
+      },
+      onError: (err) => {
+        toast.error(err);setIsThinking(false);setIsLoading(false);setSearchStatus("");
+        if (presenceChannelRef.current && chatUserId) {
+          presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, busy: false } });
+        }
+        setMessages((prev) => prev[prev.length - 1]?.role === "assistant" && !prev[prev.length - 1]?.content ? prev.slice(0, -1) : prev);
+        isSubmittingRef.current = false;
+      },
+      signal: controller.signal
+    });
+  };
+
+  useEffect(() => {
+    sendWithTextRef.current = handleSendWithText;
+  });
+
+  const handleSend = () => handleSendWithText();
+
+  const handleNewChat = () => {
+    setMessages([]);setConversationId(null);setConversationTitle("");setIsLoading(false);setIsThinking(false);setAttachedFiles([]);setSearchStatus("");setChatMode("normal");setSearchEnabled(true);setComputerUseEnabled(true);setIsShared(false);setShareId(null);setShareMode("private");setIsPinned(false);setPendingQuestions([]);setSelectedModel(null);setSelectedAgent(null);isSubmittingRef.current = false;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const fileList = Array.from(files);
+    if (attachedFiles.length + fileList.length > 5) {
+      toast.error("Maximum 5 files allowed");
+      e.target.value = "";
+      return;
+    }
+    fileList.forEach(async (file) => {
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 20MB)`);
+        return;
+      }
+      if (file.size === 0) {
+        toast.error(`${file.name} is empty`);
+        return;
+      }
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = () => setAttachedFiles((prev) => [...prev, { name: file.name, type: "image", data: reader.result as string }]);
+        reader.readAsDataURL(file);
+      } else {
+        const text = await file.text();
+        setAttachedFiles((prev) => [...prev, { name: file.name, type: "file", data: text.slice(0, 8000) }]);
+      }
+    });
+    e.target.value = "";
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => setAttachedFiles((prev) => [...prev, { name: file.name, type: "image", data: reader.result as string }]);
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setAttachedFiles((prev) => [...prev, { name: file.name, type: "image", data: reader.result as string }]);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleShare = async () => {
+    setShareDialogOpen(true);
+  };
+
+  const handleCreateShareLink = async (modeOverride?: "private" | "public") => {
+    if (!conversationId) return;
+    const mode = modeOverride ?? shareMode;
+    if (mode === "public") {
+      const newShareId = shareId || Math.random().toString(36).substring(2, 10);
+      const { error } = await supabase.from("conversations").update({ is_shared: true, share_id: newShareId } as any).eq("id", conversationId);
+      if (error) {toast.error("Failed to share");return;}
+      setIsShared(true);
+      setShareId(newShareId);
+      const url = `${window.location.origin}/share/${newShareId}`;
+      setGeneratedShareUrl(url);
+    } else {
+      await supabase.from("conversations").update({ is_shared: false } as any).eq("id", conversationId);
+      setIsShared(false);
+      setGeneratedShareUrl(null);
+      toast.success("Chat set to private");
+      setShareDialogOpen(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (generatedShareUrl) {
+      await navigator.clipboard.writeText(generatedShareUrl);
+      toast.success("Link copied!");
+    }
+  };
+
+  const handleRename = async () => {
+    if (!conversationId || !renameValue.trim()) return;
+    await supabase.from("conversations").update({ title: renameValue.trim() }).eq("id", conversationId);
+    setConversationTitle(renameValue.trim());
+    setIsRenaming(false);
+    toast.success("Renamed");
+  };
+
+  const handleTogglePin = async () => {
+    if (!conversationId) return;
+    const nextPinned = !isPinned;
+    const payload = nextPinned
+      ? { is_pinned: true, pinned_at: new Date().toISOString() }
+      : { is_pinned: false, pinned_at: null };
+    const { error } = await supabase.from("conversations").update(payload as any).eq("id", conversationId);
+    if (error) { toast.error("Failed to update pin"); return; }
+    setIsPinned(nextPinned);
+    toast.success(nextPinned ? "Pinned" : "Unpinned");
+  };
+
+  const handleInvite = async () => {
+    if (!conversationId) { toast.error("Start a conversation first"); return; }
+    setInviteDialogOpen(true);
+    setInviteLink(null);
+    setInviteEmail("");
+    const { data: memberRows } = await supabase.from("conversation_members").select("user_id, role").eq("conversation_id", conversationId);
+    if (memberRows && memberRows.length > 0) {
+      const ids = memberRows.map((m: any) => m.user_id);
+      const { data: profs } = await supabase.from("profiles").select("id, display_name, avatar_url").in("id", ids);
+      const profMap: Record<string, any> = {};
+      (profs || []).forEach((p: any) => { profMap[p.id] = p; });
+      setMembers(memberRows.map((m: any) => ({
+        id: m.user_id, email: "", role: m.role,
+        name: profMap[m.user_id]?.display_name, avatar: profMap[m.user_id]?.avatar_url,
+      })));
+    } else {
+      setMembers([]);
+    }
+    // Auto-generate invite link immediately
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase.from("conversation_invites").insert({ conversation_id: conversationId, invited_by: user.id } as any).select("invite_token").single();
+    if (!error && data) {
+      setInviteLink(`${window.location.origin}/invite/${(data as any).invite_token}`);
+    }
+  };
+
+  const handleSendInviteEmail = async () => {
+    if (!conversationId || !inviteEmail.trim()) return;
+    setInviteLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setInviteLoading(false); return; }
+    let link = inviteLink;
+    if (!link) {
+      const { data, error } = await supabase.from("conversation_invites").insert({ conversation_id: conversationId, invited_by: user.id, invite_email: inviteEmail.trim().toLowerCase() } as any).select("invite_token").single();
+      if (error) { toast.error("Failed to create invite"); setInviteLoading(false); return; }
+      link = `${window.location.origin}/invite/${(data as any).invite_token}`;
+      setInviteLink(link);
+    }
+
+    // Send actual invite email
+    try {
+      const { error: emailError } = await supabase.functions.invoke("send-email", {
+        body: {
+          to: inviteEmail.trim().toLowerCase(),
+          template: "invite",
+          user_id: user.id,
+          type: "system",
+          variables: {
+            name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Someone",
+            invite_link: link,
+            app_url: window.location.origin,
+          },
+        },
+      });
+      if (emailError) throw emailError;
+      toast.success(`Invite sent to ${inviteEmail.trim()}`);
+      setInviteEmail("");
+    } catch {
+      toast.error("Couldn't send the email — link is ready to share");
+    }
+
+    setInviteLoading(false);
+  };
+
+  const handleGenerateInviteLink = async () => {
+    if (!conversationId) return;
+    setInviteLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setInviteLoading(false); return; }
+    const { data, error } = await supabase.from("conversation_invites").insert({ conversation_id: conversationId, invited_by: user.id } as any).select("invite_token").single();
+    if (error) { toast.error("Failed to create invite link"); setInviteLoading(false); return; }
+    const link = `${window.location.origin}/invite/${(data as any).invite_token}`;
+    setInviteLink(link);
+    setInviteLoading(false);
+  };
+
+  const handleCopyInviteLink = async () => {
+    if (inviteLink) { await navigator.clipboard.writeText(inviteLink); toast.success("Invite link copied!"); }
+  };
+
+  // Accept invite / deep link / demo conversation on page load
+  useEffect(() => {
+    // Sidebar navigation: arrived via navigate('/chat', { state: { loadConversationId } })
+    const stateCid = (location.state as any)?.loadConversationId as string | undefined;
+    if (stateCid && stateCid !== conversationId) {
+      loadConversation(stateCid);
+      navigate(location.pathname, { replace: true, state: {} });
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    
+    // Deep link: /chat?conv=xxx
+    const convParam = params.get("conv");
+    if (convParam && !conversationId) {
+      loadConversation(convParam);
+      window.history.replaceState({}, "", "/chat");
+      return;
+    }
+
+    const inviteToken = params.get("invite");
+    if (inviteToken) {
+      (async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { toast.error("Please sign in to accept invite"); return; }
+        const { data: invite } = await supabase.from("conversation_invites").select("*").eq("invite_token", inviteToken).eq("status", "pending").single();
+        if (!invite) { toast.error("Invalid or expired invite"); return; }
+        await supabase.from("conversation_members").insert({ conversation_id: (invite as any).conversation_id, user_id: user.id, role: "member" } as any);
+        await supabase.from("conversation_invites").update({ status: "accepted", accepted_by: user.id } as any).eq("id", (invite as any).id);
+        loadConversation((invite as any).conversation_id);
+        window.history.replaceState({}, "", "/chat");
+        toast.success("You joined the conversation!");
+      })();
+      return;
+    }
+
+    // Demo conversation on first visit
+    const demoKey = "megsy_demo_shown";
+    if (localStorage.getItem(demoKey)) return;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      // Check if user has any conversations already
+      const { count } = await supabase.from("conversations").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+      if (count && count > 0) { localStorage.setItem(demoKey, "1"); return; }
+      localStorage.setItem(demoKey, "1");
+
+      const demoUserMsg = "What is Megsy AI? Tell me everything about what you can do.";
+      const demoAssistantMsg = `# Welcome to Megsy AI
+
+Megsy is your all-in-one AI platform. Here's everything I can help you with:
+
+## Chat
+- **Smart conversations** powered by Google Gemini, with web search, deep research, learning mode, and shopping mode
+- **Smart Questions** — I ask you clarifying questions to give better answers
+- **File analysis** — upload images, PDFs, documents and I'll analyze them
+- **Integrations** — connect Telegram, Discord, Slack, Notion, Zoom, TikTok, Twitter, Shopify, Meta, and more
+
+## Images
+- **AI Image Generation** — create stunning images using multiple models (Flux, DALL-E, Midjourney-style, and more)
+- **15+ Image Tools** — Face Swap, Background Remover, Clothes Changer, Hair Changer, Inpainting, Retouch, Colorize, Sketch to Image, and more
+- **Studio** — your personal gallery of all generated images
+
+## Videos
+- **AI Video Generation** — create videos from text or images
+- **Video Tools** — Swap Characters, Upscale, Talking Photo, Video Extender, Auto Caption, Lip Sync, Video to Text
+- **Community** — browse and reuse prompts from other creators
+
+## Voice
+- **Text-to-Speech** — generate natural voices with multiple AI models
+- **Voice Cloning** — clone your own voice
+
+## Programming
+- **Megsy Workspace** — describe an app and I build it with live preview
+- **Full-stack generation** — React, HTML, CSS, JavaScript projects
+- **Download** your generated code
+
+## Files
+- **Document creation** — generate PDFs, spreadsheets, presentations
+- **Smart file analysis** — upload any document for AI analysis
+
+## Settings
+- **AI Personalization** — tell me your name, profession, and how you want me to behave
+- **Theme customization** — multiple themes and accent colors
+- **Language** — auto-translate the entire UI
+
+---
+
+**MC Credits** power everything. You start with free credits and can earn more through referrals (20% commission).
+
+Ask me anything to get started!`;
+
+      // Create conversation
+      const { data: conv } = await supabase.from("conversations").insert({ title: "Welcome to Megsy AI", mode: "chat", model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
+      if (!conv) return;
+      await supabase.from("messages").insert([
+        { conversation_id: conv.id, role: "user", content: demoUserMsg },
+        { conversation_id: conv.id, role: "assistant", content: demoAssistantMsg },
+      ]);
+      setConversationId(conv.id);
+      setConversationTitle("Welcome to Megsy AI");
+      setMessages([
+        { role: "user", content: demoUserMsg },
+        { role: "assistant", content: demoAssistantMsg },
+      ]);
+    })();
+  }, []);
+
+  // Realtime for member join/leave + enrich with profile
+  useEffect(() => {
+    if (!conversationId) return;
+    const enrichMember = async (userId: string, role: string) => {
+      const { data: prof } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", userId).maybeSingle();
+      return { id: userId, email: "", role, name: (prof as any)?.display_name || undefined, avatar: (prof as any)?.avatar_url || undefined };
+    };
+    const channel = supabase.channel(`members-${conversationId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${conversationId}` }, async (payload) => {
+        const m = payload.new as any;
+        const enriched = await enrichMember(m.user_id, m.role);
+        setMembers((prev) => prev.some((x) => x.id === m.user_id) ? prev : [...prev, enriched]);
+        toast.success(`${enriched.name || "Someone"} joined`);
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const old = payload.old as any;
+        setMembers((prev) => prev.filter((m) => m.id !== old.user_id));
+        if (old.user_id === chatUserId) {
+          toast.error("You were removed from this chat");
+          handleNewChat();
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [conversationId, chatUserId]);
+
+  // Realtime: new messages + presence (typing + AI-busy lock)
+  useEffect(() => {
+    if (!conversationId || !chatUserId) return;
+    const msgChannel = supabase
+      .channel(`messages-${conversationId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` }, async (payload) => {
+        const newMsg = payload.new as any;
+        // Skip echoes of messages we just inserted ourselves
+        if (newMsg.id && ownInsertedIdsRef.current.has(newMsg.id)) return;
+        let senderName: string | null = null;
+        let senderAvatar: string | null = null;
+        if (newMsg.user_id) {
+          const { data: prof } = await supabase.from("profiles").select("display_name, avatar_url").eq("id", newMsg.user_id).maybeSingle();
+          senderName = (prof as any)?.display_name || null;
+          senderAvatar = (prof as any)?.avatar_url || null;
+        }
+        setMessages((prev) => {
+          if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
+          return [...prev, {
+            role: newMsg.role,
+            content: newMsg.content,
+            images: newMsg.images || undefined,
+            id: newMsg.id,
+            user_id: newMsg.user_id,
+            senderName,
+            senderAvatar,
+          }];
+        });
+        setTimeout(() => scrollToBottom(), 100);
+      })
+      .subscribe();
+
+    const presence = supabase.channel(`presence-${conversationId}`, { config: { broadcast: { self: false } } });
+    presence
+      .on("broadcast", { event: "typing" }, ({ payload }: any) => {
+        if (!payload?.user_id || payload.user_id === chatUserId) return;
+        setTypingUsers((prev) => {
+          const next = prev.filter((u) => u.id !== payload.user_id);
+          return [...next, { id: payload.user_id, name: payload.name || "Someone", avatar: payload.avatar || null }];
+        });
+        setTimeout(() => {
+          setTypingUsers((prev) => prev.filter((u) => u.id !== payload.user_id));
+        }, 3500);
+      })
+      .on("broadcast", { event: "stop_typing" }, ({ payload }: any) => {
+        setTypingUsers((prev) => prev.filter((u) => u.id !== payload?.user_id));
+      })
+      .on("broadcast", { event: "ai_busy" }, ({ payload }: any) => {
+        if (!payload || payload.user_id === chatUserId) return;
+        setRemoteAiBusy(payload.busy ? { name: payload.name || "Someone" } : null);
+      })
+      .subscribe();
+    presenceChannelRef.current = presence;
+
+    return () => {
+      supabase.removeChannel(msgChannel);
+      supabase.removeChannel(presence);
+      presenceChannelRef.current = null;
+    };
+  }, [conversationId, chatUserId]);
+
+  // Throttled typing broadcast
+  useEffect(() => {
+    if (!presenceChannelRef.current || !chatUserId || !input.trim()) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 1500) return;
+    lastTypingSentRef.current = now;
+    presenceChannelRef.current.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { user_id: chatUserId, name: userName, avatar: null },
+    });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      presenceChannelRef.current?.send({ type: "broadcast", event: "stop_typing", payload: { user_id: chatUserId } });
+    }, 2000);
+  }, [input, chatUserId, userName]);
+
+  const handleKickMember = async (memberId: string) => {
+    if (!conversationId) return;
+    if (!window.confirm("Remove this member?")) return;
+    const { error } = await supabase.from("conversation_members").delete().eq("conversation_id", conversationId).eq("user_id", memberId);
+    if (error) { toast.error("Failed to remove member"); return; }
+    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    toast.success("Member removed");
+  };
+
+
+  const handleDelete = () => {
+    if (!conversationId) return;
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!conversationId) return;
+    setIsDeleting(true);
+    const { error: msgErr } = await supabase.from("messages").delete().eq("conversation_id", conversationId);
+    const { error: convErr } = await supabase.from("conversations").delete().eq("id", conversationId);
+    setIsDeleting(false);
+    setConfirmDeleteOpen(false);
+    if (msgErr || convErr) { toast.error("Failed to delete"); return; }
+    toast.success("Chat deleted");
+    handleNewChat();
+  };
+
+  const handleEditUserMessageAt = useCallback((index: number, messageText: string) => {
+    setInput(messageText);
+    setMessages((prev) => {
+      const next = [...prev];
+      if (!next[index] || next[index].role !== "user") return prev;
+      next.splice(index, next[index + 1]?.role === "assistant" ? 2 : 1);
+      return next;
+    });
+  }, []);
+
+  const hasConversation = messages.length > 0;
+
+  const iosSpring = { type: "spring" as const, damping: 22, stiffness: 350 };
+
+  const renderPlusMenu = () => (
+    <>
+      <div className="fixed inset-0 z-[45]" onClick={() => setPlusMenuOpen(false)} />
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 12, scale: 0.94 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.94 }}
+        transition={iosSpring}
+        className="absolute bottom-full mb-2 left-2 z-[46] rounded-3xl liquid-glass-milk p-3 w-[19rem] overflow-hidden"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {plusView === "main" ? (
+            <motion.div
+              key="main"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.18 }}
+              className="flex flex-col gap-2"
+            >
+              {/* Top row: 3 quick actions side-by-side */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { icon: Camera, label: "Camera", onClick: () => { cameraInputRef.current?.click(); setPlusMenuOpen(false); } },
+                  { icon: Image, label: "Photos", onClick: () => { imageInputRef.current?.click(); setPlusMenuOpen(false); } },
+                  { icon: FileUp, label: "Files", onClick: () => { fileInputRef.current?.click(); setPlusMenuOpen(false); } },
+                ].map(({ icon: Icon, label, onClick }) => (
+                  <motion.button
+                    key={label}
+                    whileTap={{ scale: 0.95 }}
+                    transition={iosSpring}
+                    onClick={onClick}
+                    className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl liquid-glass-hover transition-colors"
+                  >
+                    <Icon className="w-5 h-5 text-foreground/85" strokeWidth={1.75} />
+                    <span className="text-[11.5px] font-medium text-foreground/85">{label}</span>
+                  </motion.button>
+                ))}
+              </div>
+
+              {/* Web search row */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={iosSpring}
+                onClick={handleSearchToggle}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
+              >
+                <Globe className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <span className="flex-1 text-[13.5px] text-foreground/85">Web search</span>
+                <div className={`w-9 h-5 rounded-full transition-colors flex items-center ${searchEnabled ? "bg-primary justify-end" : "bg-muted justify-start"}`}>
+                  <motion.div layout transition={iosSpring} className="w-4 h-4 rounded-full bg-foreground mx-0.5" />
+                </div>
+              </motion.button>
+
+              {/* Tools row */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={iosSpring}
+                onClick={() => setPlusView("tools")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
+              >
+                <Wrench className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <span className="flex-1 text-[13.5px] text-foreground/85">Use tools</span>
+                <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
+              </motion.button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="tools"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 12 }}
+              transition={{ duration: 0.18 }}
+              className="flex flex-col"
+            >
+              <div className="flex items-center gap-1 px-1.5 pt-1 pb-1.5">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => setPlusView("main")}
+                  className="w-7 h-7 flex items-center justify-center rounded-full liquid-glass-hover"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="w-4 h-4 text-foreground/80" />
+                </motion.button>
+                <span className="text-[13px] font-semibold text-foreground/85">Tools</span>
+              </div>
+
+              {userIntegrations.length === 0 ? (
+                <div className="px-3 py-4 text-center">
+                  <p className="text-[13px] text-foreground/80 mb-1">You're not connected to any apps yet</p>
+                  <p className="text-[11px] text-muted-foreground mb-3">Connect tools to extend Megsy with your data.</p>
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    transition={iosSpring}
+                    onClick={() => { setPlusMenuOpen(false); setConnectorsOpen(true); }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-[12.5px] font-semibold hover:bg-primary/90 transition-opacity"
+                  >
+                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                    Connect now
+                  </motion.button>
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  {userIntegrations.map((name) => (
+                    <div key={name} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
+                      <div className="w-7 h-7 rounded-lg bg-secondary/70 flex items-center justify-center">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <span className="flex-1 text-[13.5px] text-foreground/85">{name}</span>
+                    </div>
+                  ))}
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    transition={iosSpring}
+                    onClick={() => { setPlusMenuOpen(false); setConnectorsOpen(true); }}
+                    className="mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl liquid-glass-hover text-[12.5px] text-primary font-medium"
+                  >
+                    <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                    Manage connections
+                  </motion.button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </>
+  );
+
+
+  const renderAttachments = () => {
+    if (attachedFiles.length === 0) return null;
+    return (
+      <div className="flex gap-2 px-2 overflow-x-auto pb-1 mb-1">
+        {attachedFiles.map((f, i) =>
+        <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg liquid-glass-button text-xs text-foreground shrink-0">
+            {f.type === "image" ? <img src={f.data} alt="" className="w-8 h-8 rounded object-cover" /> : <FileUp className="w-3 h-3" />}
+            <span className="truncate max-w-[100px]">{f.name}</span>
+            <button onClick={() => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-foreground">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>);
+  };
+
+  // Glass dialog class
+  const glassDialogClass = "max-w-[calc(100vw-2rem)] sm:max-w-[400px] p-0 gap-0 overflow-hidden rounded-2xl liquid-glass";
+
+  return (
+    <AppLayout
+      onSelectConversation={loadConversation}
+      onNewChat={handleNewChat}
+      activeConversationId={conversationId}>
+      
+      <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
+        <AppSidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onNewChat={handleNewChat}
+          onSelectConversation={loadConversation}
+          activeConversationId={conversationId}
+          currentMode="chat" />
+
+        {/* Header */}
+        <div className="sticky top-0 z-20 flex items-center gap-2 px-4 py-2.5 min-h-[56px] bg-background/60 backdrop-blur-xl">
+          <button onClick={() => setSidebarOpen(true)} className="w-9 h-9 flex items-center justify-center rounded-full text-foreground/85 hover:bg-accent/40 transition-colors" aria-label="Open menu">
+            <Menu className="w-[20px] h-[20px]" />
+          </button>
+
+          {/* Center: Unlock Pro (only when no conversation) */}
+          <div className="flex-1 flex items-center justify-center">
+            {!hasConversation && (
+              <UnlockProButton
+                onClick={() => navigate("/pricing")}
+                aria-label="Unlock Pro"
+                text="Unlock Pro"
+              />
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            {hasConversation && conversationId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-9 h-9 flex items-center justify-center rounded-full text-foreground/85 hover:bg-accent/40 transition-colors" aria-label="More options">
+                  <MoreVertical className="w-[20px] h-[20px]" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className="w-[15rem] rounded-2xl liquid-glass border border-border/30 p-1.5 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]"
+              >
+                {[
+                  { icon: Plus, label: "New chat", onClick: handleNewChat, featured: true },
+                  { icon: Share2, label: "Share chat", onClick: handleShare, hint: isShared ? "Public link" : undefined },
+                  { icon: UserPlus, label: "Invite people", onClick: handleInvite },
+                  { icon: Pencil, label: "Rename", onClick: () => { setRenameValue(conversationTitle); setIsRenaming(true); } },
+                  { icon: Pin, label: isPinned ? "Unpin chat" : "Pin chat", onClick: handleTogglePin },
+                ].map(({ icon: Icon, label, onClick, hint, featured }) => (
+                  <DropdownMenuItem
+                    key={label}
+                    onClick={onClick}
+                    className="rounded-xl px-2.5 py-2.5 text-[14px] gap-3 cursor-pointer text-foreground/90 focus:bg-accent/40 data-[highlighted]:bg-accent/40"
+                  >
+                    <span className="w-8 h-8 rounded-xl bg-accent/30 flex items-center justify-center shrink-0">
+                      <Icon className={`w-[15px] h-[15px] ${featured ? "text-purple-400" : "text-foreground/85"}`} strokeWidth={1.9} />
+                    </span>
+                    <span className={`flex-1 truncate ${featured ? "font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent" : ""}`}>{label}</span>
+                    {hint && <span className="text-[10.5px] text-muted-foreground">{hint}</span>}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator className="my-1.5 bg-border/40" />
+                <DropdownMenuItem
+                  onClick={handleDelete}
+                  className="rounded-xl px-2.5 py-2.5 text-[14px] gap-3 cursor-pointer text-destructive focus:text-destructive data-[highlighted]:bg-destructive/10"
+                >
+                  <span className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-[15px] h-[15px]" strokeWidth={1.9} />
+                  </span>
+                  <span className="flex-1 truncate">Delete chat</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            )}
+          </div>
+        </div>
+
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto min-h-0 relative" ref={messagesContainerRef} onScroll={handleScroll}>
+          {messages.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center px-6 pb-32">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.85, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 220, damping: 20 }}
+                className="relative inline-flex items-center gap-3"
+              >
+                <div className="absolute inset-0 -m-8 rounded-full bg-blue-500/15 blur-2xl animate-pulse" />
+                <PegtopIcon className="relative w-9 h-9 md:w-10 md:h-10 text-blue-500 drop-shadow-[0_0_18px_rgba(59,130,246,0.7)]" />
+                <h1 className="relative text-[28px] md:text-[36px] leading-none tracking-tight font-extrabold text-foreground">
+                  Create{" "}
+                  <Highlighter action="underline" color="#3B82F6" strokeWidth={2.5}>
+                    <span className="text-blue-500">something</span>
+                  </Highlighter>
+                </h1>
+              </motion.div>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto py-4 px-4 md:px-6 space-y-2 pb-44 md:pb-52">
+              {messages.map((msg, i) =>
+                <ChatMessage
+                  key={i}
+                  messageIndex={i}
+                  role={msg.role}
+                  content={msg.content}
+                  images={msg.images}
+                  products={msg.products}
+                  attachedImages={msg.attachedImages}
+                  attachedFiles={msg.attachedFiles}
+                  isStreaming={isLoading && i === messages.length - 1 && msg.role === "assistant"}
+                  isThinking={isThinking && i === messages.length - 1 && msg.role === "assistant" && !msg.content}
+                  searchStatus={i === messages.length - 1 && msg.role === "assistant" ? searchStatus : undefined}
+                  liked={msg.liked}
+                  onLikeMessage={handleLikeMessage}
+                  onShare={undefined}
+                  onStructuredAction={handleStructuredAction}
+                  onEditUserMessageAt={msg.role === "user" ? handleEditUserMessageAt : undefined}
+                  isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
+                  researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
+                  researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
+                  senderName={msg.senderName || undefined}
+                  senderAvatar={msg.senderAvatar || undefined}
+                  isOtherMember={msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId}
+                  bubbleColor={msg.role === "user" && msg.user_id && msg.user_id !== chatUserId ? colorForUser(msg.user_id) : null} />
+
+              )}
+              {/* Typing indicator */}
+              {typingUsers.length > 0 && (
+                <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                  <span>{typingUsers.map((u) => u.name).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…</span>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+
+          <AnimatePresence>
+            {showScrollBtn && messages.length > 0 && (
+              <motion.button
+                initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                onClick={scrollToBottom}
+                className="fixed bottom-40 left-1/2 -translate-x-1/2 z-20 w-8 h-8 rounded-full liquid-glass flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+                aria-label="Scroll to bottom"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Bottom input - floating with blur */}
+        <div className="fixed inset-x-0 bottom-0 z-30 px-3 md:px-6 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 pointer-events-none">
+            <div className="max-w-3xl mx-auto space-y-2 pointer-events-auto">
+              {/* Mode badge above input */}
+              <AnimatePresence>
+                {chatMode !== "normal" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="flex items-center"
+                  >
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium liquid-glass-subtle ${
+                      chatMode === "learning" ? "text-emerald-400" :
+                      chatMode === "shopping" ? "text-amber-400" :
+                      chatMode === "deep-research" ? "text-violet-400" : "text-foreground"
+                    }`}>
+                      {chatMode === "learning" && <GraduationCap className="w-3.5 h-3.5" />}
+                      {chatMode === "shopping" && <ShoppingCart className="w-3.5 h-3.5" />}
+                      {chatMode === "deep-research" && <Globe className="w-3.5 h-3.5" />}
+                      <span>{chatMode === "learning" ? "Learning" : chatMode === "shopping" ? "Shopping" : "Deep Research"}</span>
+                      <button
+                        onClick={() => { setChatMode("normal"); setSelectedAgent(null); setSelectedModel(null); }}
+                        className="ml-0.5 p-0.5 rounded-full hover:bg-accent/50 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  </motion.div>
+                )}
+                {selectedAgent && chatMode === "normal" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="flex items-center"
+                  >
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-sm border border-border/30 ${selectedAgent.bg} ${selectedAgent.color}`}>
+                      {(() => { const Icon = selectedAgent.icon; return <Icon className="w-3.5 h-3.5" />; })()}
+                      <span>{selectedAgent.label}</span>
+                      <button
+                        onClick={() => { setSelectedAgent(null); setSelectedModel(null); }}
+                        className="ml-0.5 p-0.5 rounded-full hover:bg-accent/50 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Learning quick-tools row — visible when Learning mode is active */}
+              <AnimatePresence>
+                {chatMode === "learning" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    transition={{ type: "spring", stiffness: 360, damping: 24 }}
+                    className="flex gap-2 px-1 overflow-x-auto pb-1 scrollbar-thin"
+                  >
+                    {[
+                      { to: "/tools/exam-simulator", label: "Exams", Icon: ClipboardList, color: "text-rose-400", bg: "bg-rose-500/10" },
+                      { to: "/tools/focus-room", label: "Focus", Icon: Timer, color: "text-blue-400", bg: "bg-blue-500/10" },
+                      { to: "/tools/smart-notes", label: "Notes", Icon: NotebookPen, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+                      { to: "/tools/study-planner", label: "Planner", Icon: CalendarDays, color: "text-amber-400", bg: "bg-amber-500/10" },
+                    ].map(({ to, label, Icon, color, bg }) => (
+                      <motion.button
+                        key={to}
+                        whileTap={{ scale: 0.94 }}
+                        transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                        onClick={() => navigate(to)}
+                        className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 ${bg} hover:border-border transition-colors ${color}`}
+                      >
+                        <Icon className="w-3.5 h-3.5" strokeWidth={2} />
+                        <span className="text-[12px] font-semibold text-foreground/90">{label}</span>
+                      </motion.button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Mode chips removed per request */}
+
+              {renderAttachments()}
+
+              {remoteAiBusy && (
+                <div className="mx-auto px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 text-xs text-center">
+                  ⏳ {remoteAiBusy.name} is chatting with AI… please wait
+                </div>
+              )}
+
+
+              <div className="relative mx-auto w-full max-w-3xl">
+                <AnimatePresence>
+                  {plusMenuOpen && renderPlusMenu()}
+                </AnimatePresence>
+                <AnimatedInput
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  onCancel={handleCancel}
+                  onPlusClick={() => setPlusMenuOpen(!plusMenuOpen)}
+                  disabled={isLoading || !!remoteAiBusy}
+                  isLoading={isLoading}
+                  pendingQuestions={pendingQuestions}
+                  onQuestionAnswer={handleQuestionAnswer}
+                  onQuestionSkip={handleQuestionSkip}
+                  activeAgent={chatMode !== "normal" ? chatMode : (selectedAgent?.id || null)}
+                  onAgentSelect={(agent: AgentDef) => {
+                    const modeMap: Record<string, ChatMode> = { learning: "learning", shopping: "shopping", "deep-research": "deep-research" };
+                    if (modeMap[agent.id]) {
+                      setSelectedAgent(null);
+                      setSelectedModel(null);
+                      handleModeChange(modeMap[agent.id]);
+                      return;
+                    }
+                    setChatMode("normal");
+                    setSelectedAgent(agent);
+                    setSelectedModel(null);
+                  }}
+                  onAgentRemove={() => { setChatMode("normal"); setSelectedAgent(null); setSelectedModel(null); if (chatMode === "deep-research") setSearchEnabled(false); }}
+                  selectedModel={selectedModel}
+                  onModelSelect={(model: AgentModel) => setSelectedModel(model)}
+                  onModelRemove={() => setSelectedModel(null)}
+                />
+              </div>
+            </div>
+          </div>
+
+        {/* Hidden file inputs */}
+        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.doc,.docx" multiple />
+        <input ref={cameraInputRef} type="file" className="hidden" onChange={handleCameraCapture} accept="image/*" capture="environment" />
+        <input ref={imageInputRef} type="file" className="hidden" onChange={handleImageUpload} accept="image/*" multiple />
+
+        <ConnectorsDialog open={connectorsOpen} onOpenChange={setConnectorsOpen} onNavigateIntegrations={() => navigate("/settings/integrations")} />
+
+        {/* Share Dialog - Glass */}
+        <Dialog open={shareDialogOpen} onOpenChange={(open) => {setShareDialogOpen(open);if (!open) setGeneratedShareUrl(null);}}>
+          <DialogContent className={glassDialogClass}>
+            <div className="px-5 pt-5 pb-3">
+              <DialogHeader className="mb-0">
+                <DialogTitle className="text-base font-semibold text-left text-black">Share chat</DialogTitle>
+                <DialogDescription className="text-xs text-left text-black/70">Future messages aren't included</DialogDescription>
+              </DialogHeader>
+            </div>
+            <div className="border-t border-border/30">
+              <button
+                onClick={() => {setShareMode("private");setGeneratedShareUrl(null);}}
+                className={`w-full flex items-center gap-3 px-5 py-3.5 transition-colors ${shareMode === "private" ? "bg-accent/50" : "hover:bg-accent/30"}`}>
+                <Lock className="w-4 h-4 text-black shrink-0" />
+                <div className="text-left flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-black">Keep private</p>
+                  <p className="text-[11px] text-black/70">Only you have access</p>
+                </div>
+              </button>
+              <div className="h-px bg-border/30 mx-5" />
+              <button
+                onClick={() => { setShareMode("public"); if (!generatedShareUrl) handleCreateShareLink("public"); }}
+                className={`w-full flex items-center gap-3 px-5 py-3.5 transition-colors ${shareMode === "public" ? "bg-accent/50" : "hover:bg-accent/30"}`}>
+                <Globe className="w-4 h-4 text-black shrink-0" />
+                <div className="text-left flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-black">Create public link</p>
+                  <p className="text-[11px] text-black/70">Anyone with the link can view</p>
+                </div>
+              </button>
+            </div>
+            <div className="px-5 py-4 border-t border-border/30">
+              {shareMode === "public" ? (
+                generatedShareUrl ? (
+                  <div className="mx-auto flex items-center justify-center gap-2 max-w-full w-fit rounded-xl liquid-glass-button px-3 py-2.5 overflow-hidden">
+                    <span className="text-[12px] font-medium text-black tracking-tight truncate min-w-0 max-w-[60vw]" dir="ltr">
+                      {(() => {
+                        try {
+                          const u = new URL(generatedShareUrl);
+                          const tail = u.pathname.split("/").pop() || "";
+                          return `${u.host}/…/${tail.slice(0, 6)}`;
+                        } catch { return generatedShareUrl.slice(0, 24) + "…"; }
+                      })()}
+                    </span>
+                    <button onClick={handleCopyShareLink} className="shrink-0 p-1.5 rounded-lg liquid-glass-hover transition-colors" aria-label="Copy">
+                      <Copy className="w-3.5 h-3.5 text-black" />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-center text-[12px] text-black/60">Generating link…</p>
+                )
+              ) : (
+                <p className="text-center text-[12px] font-medium text-black">Everything stays private to you</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Rename Dialog - Glass */}
+        <Dialog open={isRenaming} onOpenChange={setIsRenaming}>
+          <DialogContent className={`${glassDialogClass} sm:max-w-sm`}>
+            <div className="p-5 space-y-3">
+              <DialogHeader>
+                <DialogTitle className="text-lg text-foreground">Rename chat</DialogTitle>
+              </DialogHeader>
+              <Input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="h-12 rounded-2xl border-border/30 bg-accent/30 text-sm text-foreground placeholder:text-muted-foreground"
+                onKeyDown={(e) => e.key === "Enter" && handleRename()}
+                autoFocus />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setIsRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors">Cancel</button>
+                <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-opacity">Save</button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirm Delete Dialog */}
+        <Dialog open={confirmDeleteOpen} onOpenChange={(o) => !isDeleting && setConfirmDeleteOpen(o)}>
+          <DialogContent className={`${glassDialogClass} sm:max-w-sm`}>
+            <div className="p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-destructive/15 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-destructive" strokeWidth={2} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <DialogTitle className="text-base font-semibold text-foreground">Delete this chat?</DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-1">
+                    This will permanently remove the conversation and all its messages. This action can't be undone.
+                  </DialogDescription>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setConfirmDeleteOpen(false)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors disabled:opacity-50"
+                >Cancel</button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-xl text-sm font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Delete
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={inviteDialogOpen} onOpenChange={(open) => { setInviteDialogOpen(open); if (!open) { setInviteLink(null); setInviteEmail(""); } }}>
+          <DialogContent className={`${glassDialogClass} sm:max-w-[420px]`}>
+            <div className="px-5 pt-5 pb-4">
+              <DialogHeader className="mb-0">
+                <DialogTitle className="text-base font-semibold text-left text-black">Invite people</DialogTitle>
+                <DialogDescription className="text-xs text-left text-black/70 mt-0.5">Add someone to chat together in this conversation</DialogDescription>
+              </DialogHeader>
+            </div>
+
+            {/* Email invite — primary action */}
+            <div className="px-5 pb-4 border-t border-border/30 pt-4">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="friend@example.com"
+                  className="flex-1 h-11 rounded-xl border-border/30 bg-accent/30 text-sm text-black placeholder:text-black/40"
+                  onKeyDown={(e) => e.key === "Enter" && handleSendInviteEmail()}
+                />
+                <button
+                  onClick={handleSendInviteEmail}
+                  disabled={inviteLoading || !inviteEmail.trim()}
+                  className="px-4 h-11 rounded-xl text-sm font-semibold bg-foreground text-background hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Invite"}
+                </button>
+              </div>
+            </div>
+
+            {/* Or divider */}
+            <div className="px-5 flex items-center gap-3">
+              <div className="flex-1 h-px bg-border/40" />
+              <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider">or share link</span>
+              <div className="flex-1 h-px bg-border/40" />
+            </div>
+
+            {/* Truncated link */}
+            <div className="px-5 pt-4 pb-5">
+              {inviteLink ? (
+                <div className="mx-auto flex items-center justify-center gap-2 max-w-full w-fit rounded-xl liquid-glass-button px-3 py-2.5 overflow-hidden">
+                  <span className="text-[12px] font-medium text-black tracking-tight truncate min-w-0 max-w-[60vw]" dir="ltr">
+                    {(() => {
+                      try {
+                        const u = new URL(inviteLink);
+                        const tok = new URLSearchParams(u.search).get("invite") || "";
+                        return `${u.host}/…/${tok.slice(0, 6)}`;
+                      } catch { return inviteLink.slice(0, 24) + "…"; }
+                    })()}
+                  </span>
+                  <button onClick={handleCopyInviteLink} className="shrink-0 p-1.5 rounded-lg liquid-glass-hover transition-colors" aria-label="Copy">
+                    <Copy className="w-3.5 h-3.5 text-black" />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-center text-[12px] text-black/60">Generating link…</p>
+              )}
+            </div>
+
+            {members.length > 0 && (
+              <div className="px-5 py-4 border-t border-border/30">
+                <p className="text-[11px] font-semibold text-black/70 uppercase tracking-wide mb-2">People with access ({members.length + 1})</p>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[11px] font-semibold text-primary">You</div>
+                    <span className="text-xs text-black">Owner</span>
+                  </div>
+                  {members.map((m) => {
+                    const c = colorForUser(m.id);
+                    const isOwner = chatUserId && conversationOwnerId === chatUserId;
+                    return (
+                      <div key={m.id} className="flex items-center gap-2 py-1">
+                        {m.avatar ? (
+                          <img src={m.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                            {(m.name || "?")[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-xs text-black flex-1 truncate">{m.name || "Member"}</span>
+                        <span className="text-[10px] text-black/50 capitalize">{m.role}</span>
+                        {isOwner && (
+                          <button
+                            onClick={() => handleKickMember(m.id)}
+                            className="ml-1 px-2 py-1 rounded-md text-[11px] font-semibold text-destructive hover:bg-destructive/10 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </AppLayout>);
+};
+
+export default ChatPage;
