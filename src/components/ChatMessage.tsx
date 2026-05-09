@@ -544,10 +544,12 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               background: "var(--user-bubble, #2563eb)",
               color: "var(--user-bubble-text, #ffffff)",
             }}
-            className="px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text"
+            className="px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text whitespace-pre-wrap break-words"
           >
-            {content}
+            {renderTextWithMentions(content)}
           </div>
+          <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align={isOtherMember ? "left" : "right"} />
+          {showReaders && <ReadersRow readers={readers || []} align={isOtherMember ? "left" : "right"} />
 
           <AnimatePresence>
             {menuOpen && (
