@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Highlighter } from "@/components/magicui/highlighter";
 import UnlockProButton from "@/components/UnlockProButton";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, Plus, Camera, Image, FileUp, X, GraduationCap, ShoppingCart, ArrowDown, ChevronDown, ChevronLeft, Star, Pencil, Trash2, FolderPlus, Globe, Lock, Share2, MoreVertical, Pin, UserPlus, Copy, Mail, Link2, Users, Loader2, NotebookPen, ClipboardList, CalendarDays, Timer, Wrench, Lightbulb, Mic2, Sparkles, BookOpen } from "lucide-react";
+import { Menu, Plus, Camera, Image, FileUp, X, GraduationCap, ShoppingCart, ArrowDown, ChevronDown, ChevronLeft, Star, Pencil, Trash2, FolderPlus, Globe, Lock, Share2, MoreVertical, Pin, UserPlus, Copy, Mail, Link2, Users, Loader2, NotebookPen, ClipboardList, CalendarDays, Timer, Wrench, Lightbulb, Mic2, Sparkles, BookOpen, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -185,7 +185,7 @@ const ChatPage = () => {
   const [selectedModel, setSelectedModel] = useState<AgentModel | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [userName, setUserName] = useState<string>("");
-  const [plusView, setPlusView] = useState<"main" | "tools">("main");
+  const [plusView, setPlusView] = useState<"main" | "tools" | "models">("main");
   const [userIntegrations, setUserIntegrations] = useState<string[]>([]);
 
   const upsertResearchTask = useCallback((task: ResearchTask) => {
@@ -1408,49 +1408,23 @@ Ask me anything to get started!`;
                 </div>
               </motion.button>
 
-              {/* Megsy tier picker */}
-              <div className="px-2.5 py-2 rounded-xl bg-foreground/[0.03] border border-foreground/5">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Megsy v1 Model</div>
-                <div className="grid grid-cols-3 gap-1">
-                  {([
-                    { id: "lite" as const, label: "Lite", desc: "Fast", pro: false },
-                    { id: "pro" as const, label: "Pro", desc: "Smart", pro: true },
-                    { id: "max" as const, label: "Max", desc: "1T+", pro: true },
-                  ]).map(t => {
-                    const locked = t.pro && (userPlan === "free" || userPlan === "trial");
-                    return (
-                      <motion.button
-                        key={t.id}
-                        whileTap={{ scale: 0.96 }}
-                        transition={iosSpring}
-                        onClick={() => {
-                          if (locked) {
-                            toast.info("Megsy " + t.label + " is available on premium plans only");
-                            return;
-                          }
-                          setMegsyTier(t.id);
-                          localStorage.setItem("megsy_tier", t.id);
-                          if (chatUserId) {
-                            supabase.from("ai_personalization").upsert({ user_id: chatUserId, preferred_tier: t.id } as any, { onConflict: "user_id" }).then(() => {});
-                          }
-                        }}
-                        className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg transition-colors ${megsyTier === t.id ? "bg-primary text-primary-foreground" : "bg-foreground/[0.04] text-foreground/80 hover:bg-foreground/[0.08]"}`}
-                      >
-                        <span className="text-[11.5px] font-semibold flex items-center gap-1">
-                          {t.label}
-                          {t.pro && (
-                            <span className={`text-[8px] font-bold px-1 py-px rounded ${megsyTier === t.id ? "bg-primary-foreground/20 text-primary-foreground" : "bg-amber-500/15 text-amber-600 dark:text-amber-400"}`}>
-                              PRO
-                            </span>
-                          )}
-                          {locked && <span className="text-[8px] opacity-70">🔒</span>}
-                        </span>
-                        <span className="text-[9px] opacity-70 leading-tight">{t.desc}</span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Megsy model picker — opens dedicated view */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={iosSpring}
+                onClick={() => setPlusView("models")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
+              >
+                <Sparkles className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <span className="flex-1 text-[13.5px] text-foreground/85">Model</span>
+                <span className="text-[12px] font-semibold text-foreground/70 capitalize flex items-center gap-1">
+                  {megsyTier}
+                  {(megsyTier === "pro" || megsyTier === "max") && (
+                    <span className="text-[8px] font-bold px-1 py-px rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">PRO</span>
+                  )}
+                </span>
+                <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
+              </motion.button>
 
               {/* Tools row */}
               <motion.button
@@ -1463,6 +1437,70 @@ Ask me anything to get started!`;
                 <span className="flex-1 text-[13.5px] text-foreground/85">Use tools</span>
                 <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
               </motion.button>
+            </motion.div>
+          ) : plusView === "models" ? (
+            <motion.div
+              key="models"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 12 }}
+              transition={{ duration: 0.18 }}
+              className="flex flex-col"
+            >
+              <div className="flex items-center gap-1 px-1.5 pt-1 pb-2">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => setPlusView("main")}
+                  className="w-7 h-7 flex items-center justify-center rounded-full liquid-glass-hover"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="w-4 h-4 text-foreground/80" />
+                </motion.button>
+                <span className="text-[13px] font-semibold text-foreground/85">Choose Model</span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {([
+                  { id: "lite" as const, label: "Lite", desc: "Fast everyday answers", pro: false },
+                  { id: "pro" as const, label: "Pro", desc: "Smarter reasoning", pro: true },
+                  { id: "max" as const, label: "Max", desc: "1T+ flagship intelligence", pro: true },
+                ]).map(t => {
+                  const locked = t.pro && (userPlan === "free" || userPlan === "trial");
+                  const active = megsyTier === t.id;
+                  return (
+                    <motion.button
+                      key={t.id}
+                      whileTap={{ scale: 0.98 }}
+                      transition={iosSpring}
+                      onClick={() => {
+                        if (locked) {
+                          toast.info("Megsy " + t.label + " is available on premium plans only");
+                          return;
+                        }
+                        setMegsyTier(t.id);
+                        localStorage.setItem("megsy_tier", t.id);
+                        if (chatUserId) {
+                          supabase.from("ai_personalization").upsert({ user_id: chatUserId, preferred_tier: t.id } as any, { onConflict: "user_id" }).then(() => {});
+                        }
+                        setPlusView("main");
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left transition-colors ${active ? "bg-primary/10 border border-primary/30" : "liquid-glass-hover border border-transparent"}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13.5px] font-semibold text-foreground/90">{t.label}</span>
+                          {t.pro && (
+                            <span className="text-[8px] font-bold px-1 py-px rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">PRO</span>
+                          )}
+                          {locked && <span className="text-[10px] opacity-70">🔒</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-tight">{t.desc}</div>
+                      </div>
+                      {active && <Check className="w-4 h-4 text-primary shrink-0" strokeWidth={2.5} />}
+                    </motion.button>
+                  );
+                })}
+              </div>
             </motion.div>
           ) : (
             <motion.div
