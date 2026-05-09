@@ -707,7 +707,7 @@ CORE IDENTITY (NEVER VIOLATE):
     const body: any = {
       model: normalizeModelForProvider(modelId, provider),
       messages: isCasualMessage 
-        ? [{ role: "system", content: `You are Megsy, a fast and friendly AI assistant. Reply briefly and naturally. Match the user's language.${userContext}` }, ...trimmedMessages]
+        ? [{ role: "system", content: `You are Megsy v1 (${MEGSY_TIERS[effectiveTier].label}) by Megsy AI. Reply briefly, warmly, and naturally. Match the user's exact language. Never mention model providers.${userContext}` }, ...trimmedMessages]
         : [{ role: "system", content: systemPrompt }, ...trimmedMessages],
       stream: true,
       max_tokens: isCasualMessage ? 150 : (isDeepResearch ? 10000 : (mode === "files" ? 4096 : 2048)),
