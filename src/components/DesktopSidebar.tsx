@@ -53,10 +53,20 @@ const DesktopSidebar = ({ onSelectConversation, onNewChat, activeConversationId 
         setAvatarUrl(profile.avatar_url || user.user_metadata?.avatar_url || null);
         if (profile.display_name) setUserName(profile.display_name);
       }
-      const { data: convos } = await supabase
+      const { data: memberRows } = await supabase
+        .from("conversation_members")
+        .select("conversation_id")
+        .eq("user_id", user.id);
+      const memberConvIds = (memberRows || []).map((r: any) => r.conversation_id);
+      let cq = supabase
         .from("conversations")
-        .select("id, title, updated_at")
-        .eq("user_id", user.id)
+        .select("id, title, updated_at");
+      if (memberConvIds.length > 0) {
+        cq = cq.or(`user_id.eq.${user.id},id.in.(${memberConvIds.join(",")})`);
+      } else {
+        cq = cq.eq("user_id", user.id);
+      }
+      const { data: convos } = await cq
         .order("updated_at", { ascending: false })
         .limit(6);
       if (convos) setRecentChats(convos);
