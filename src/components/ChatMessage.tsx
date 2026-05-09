@@ -10,6 +10,9 @@ import InfoCards from "./InfoCards";
 import CodePreviewModal from "./CodePreviewModal";
 import ImagePreviewModal from "./ImagePreviewModal";
 import DeepResearchCard from "./chat/DeepResearchCard";
+import ResearchTaskTimeline, { type ResearchTask } from "./research/ResearchTaskTimeline";
+import ResearchPlanCard, { type ResearchPlan } from "./research/ResearchPlanCard";
+import ResearchSummaryCard, { type ResearchSummary } from "./research/ResearchSummaryCard";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
@@ -32,6 +35,9 @@ interface ChatMessageProps {
   isDeepResearch?: boolean;
   researchQuery?: string;
   researchSessionKey?: string;
+  researchPlan?: ResearchPlan | null;
+  researchTasks?: ResearchTask[];
+  researchSummary?: ResearchSummary | null;
   senderName?: string | null;
   senderAvatar?: string | null;
   isOtherMember?: boolean;
