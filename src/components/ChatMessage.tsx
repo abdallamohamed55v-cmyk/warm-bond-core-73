@@ -445,6 +445,7 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
             )}
           </AnimatePresence>
         </div>
+        <SelectTextModal open={selectTextOpen} onClose={() => setSelectTextOpen(false)} text={content} onCopy={handleCopyAllText} />
       </div>
     );
   }
