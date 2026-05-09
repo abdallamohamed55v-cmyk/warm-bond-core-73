@@ -418,24 +418,22 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.92, y: -4 }}
                   transition={{ duration: 0.18 }}
-                  className="fixed z-50 overflow-hidden rounded-2xl liquid-glass border border-border/30 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]"
-                  style={{ left: `min(${menuPosition.x}px, calc(100vw - 15rem))`, top: `min(${menuPosition.y}px, calc(100vh - 16rem))`, width: "14rem" }}
+                  className="fixed z-50 overflow-hidden rounded-2xl liquid-glass border border-border/20 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.4)] backdrop-blur-2xl"
+                  style={{ left: `min(${menuPosition.x}px, calc(100vw - 13rem))`, top: `min(${menuPosition.y}px, calc(100vh - 14rem))`, width: "12.5rem" }}
                 >
-                  <div className="p-1.5">
+                  <div className="py-1">
                     {[
                       { icon: Copy, label: "Copy", action: async () => { await handleCopy(); closeMenu(); } },
                       { icon: Pencil, label: "Edit message", action: () => { handleEditAction(); closeMenu(); } },
                       { icon: Type, label: "Select text", action: () => { handleSelectText(); closeMenu(); } },
                       { icon: Share2, label: "Share", action: async () => { await handleUserShare(); closeMenu(); } },
-                    ].map(({ icon: Icon, label, action }) => (
+                    ].map(({ icon: Icon, label, action }, i) => (
                       <button
                         key={label}
                         onClick={action}
-                        className="w-full flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-left text-[14px] text-foreground/90 hover:bg-accent/40 transition-colors"
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-[14px] text-foreground/90 hover:bg-accent/40 active:bg-accent/60 transition-colors ${i > 0 ? "border-t border-border/20" : ""}`}
                       >
-                        <span className="w-8 h-8 rounded-xl bg-accent/30 flex items-center justify-center shrink-0">
-                          <Icon className="w-[15px] h-[15px] text-foreground/85" strokeWidth={1.9} />
-                        </span>
+                        <Icon className="w-[16px] h-[16px] text-foreground/70 shrink-0" strokeWidth={1.8} />
                         <span className="flex-1 truncate">{label}</span>
                       </button>
                     ))}
