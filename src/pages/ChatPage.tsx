@@ -86,10 +86,13 @@ const normalizeStatusLabel = (status: string) => {
   const lower = status.toLowerCase();
   const blocklist = ["web_search", "browse_website", "shopping_search", "convert_currency", "generate_image", "generate_video", "generate_voice", "canva_create_slides", "running ", "tool_call", "function_call"];
   if (blocklist.some(b => lower.includes(b))) return "Working on your request...";
+  if (/browser task failed|browser task timed out|working on it|navigating|loading page/i.test(lower)) return "Checking other sources...";
   if (/https?:\/\//i.test(status)) return "Searching the web...";
   if (/writing the report/i.test(lower)) return "Writing the final report...";
   if (/analyzing products/i.test(lower)) return "Comparing the best options...";
   if (/searching for products|searching stores/i.test(lower)) return "Searching stores...";
+  if (/consulting/i.test(lower)) return "Checking trusted references...";
+  if (/reading top sources|deep_read/i.test(lower)) return "Reading sources in depth...";
   if (/searching:|gathering/i.test(lower)) return "Searching the web...";
   if (/found\s+\d+\s+(results|products)/i.test(lower)) return "Reviewing the results...";
   if (/search completed/i.test(lower)) return "Search completed.";
@@ -98,6 +101,14 @@ const normalizeStatusLabel = (status: string) => {
   if (/opening|starting|browser|megsy computer|navigat|clicking|scrolling|extracting|smart browser/i.test(lower)) return "Searching the web...";
   return "Working on your request...";
 };
+
+const DEEP_RESEARCH_STATUS_FALLBACKS = [
+  "Mapping research angles...",
+  "Searching trusted sources...",
+  "Reading source material...",
+  "Comparing evidence...",
+  "Building the final report...",
+];
 
 const ChatPage = () => {
   const navigate = useNavigate();
@@ -123,6 +134,7 @@ const ChatPage = () => {
   const [researchPlan, setResearchPlan] = useState<ResearchPlan | null>(null);
   const [researchTasks, setResearchTasks] = useState<ResearchTask[]>([]);
   const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
+  const researchTasksRef = useRef<ResearchTask[]>([]);
   const [clarifyQs, setClarifyQs] = useState<ClarifyQuestion[] | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareMode, setShareMode] = useState<"private" | "public">("public");
@@ -175,6 +187,17 @@ const ChatPage = () => {
   const [userName, setUserName] = useState<string>("");
   const [plusView, setPlusView] = useState<"main" | "tools">("main");
   const [userIntegrations, setUserIntegrations] = useState<string[]>([]);
+
+  const upsertResearchTask = useCallback((task: ResearchTask) => {
+    researchTasksRef.current = [...researchTasksRef.current.filter((x) => x.id !== task.id), task];
+    setResearchTasks(researchTasksRef.current);
+  }, []);
+
+  const updateResearchTask = useCallback((id: string, patch: Partial<ResearchTask>) => {
+    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<ResearchTask>;
+    researchTasksRef.current = researchTasksRef.current.map((task) => task.id === id ? { ...task, ...cleanPatch } : task);
+    setResearchTasks(researchTasksRef.current);
+  }, []);
 
   // Fetch user info for memory + welcome message
   useEffect(() => {
@@ -230,7 +253,8 @@ const ChatPage = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const title = firstMessage.slice(0, 50) || "New Chat";
-    const { data } = await supabase.from("conversations").insert({ title, mode: "chat", model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
+    const mode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
+    const { data } = await supabase.from("conversations").insert({ title, mode, model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
     if (data) {setConversationId(data.id);setConversationTitle(title);return data.id;}
     return null;
   };
@@ -267,6 +291,11 @@ const ChatPage = () => {
     setConversationId(id);
     setSearchStatus("");
     setPendingQuestions([]);
+    researchTasksRef.current = [];
+    setResearchPlan(null);
+    setResearchTasks([]);
+    setResearchSummary(null);
+    setClarifyQs(null);
     setLoadingMessages(true);
     setMessages([]);
     setSystemEvents([]);
@@ -422,6 +451,7 @@ const ChatPage = () => {
     setIsLoading(true);setIsThinking(true);
     setPendingQuestions([]);
     setResearchPlan(null);
+    researchTasksRef.current = [];
     setResearchTasks([]);
     setResearchSummary(null);
     setClarifyQs(null);
@@ -432,6 +462,7 @@ const ChatPage = () => {
       const insertedId = await saveMessage(resolvedConversationId, "user", userInput || `[${currentFiles.length} file(s) attached]`);
       if (insertedId) {
         ownInsertedIdsRef.current.add(insertedId);
+        window.dispatchEvent(new CustomEvent("megsy:conversations-changed"));
         // Attach id to last user message locally so dedup by id works for echo
         setMessages((prev) => {
           const idx = (() => { for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].role === "user" && !prev[i].id) return i; } return -1; })();
@@ -526,6 +557,12 @@ const ChatPage = () => {
 
     // Mode prompts are now handled server-side via chatMode parameter
     const isDeepResearch = chatMode === "deep-research";
+    if (isDeepResearch) {
+      const seedTask: ResearchTask = { id: "start", kind: "search", label: "Preparing deep research...", target: userInput.slice(0, 80), status: "running" };
+      researchTasksRef.current = [seedTask];
+      setResearchTasks([seedTask]);
+      setSearchStatus("Preparing deep research...");
+    }
 
     await streamChat({
       messages: allMessages, model: MEGSY_MODEL, tier: megsyTier, searchEnabled: searchEnabled || isDeepResearch,
@@ -547,7 +584,10 @@ const ChatPage = () => {
         });
       },
       onStatus: (status) => {
-        const normalizedStatus = normalizeStatusLabel(status);
+        let normalizedStatus = normalizeStatusLabel(status);
+        if (isDeepResearch && normalizedStatus === "Working on your request...") {
+          normalizedStatus = DEEP_RESEARCH_STATUS_FALLBACKS[researchTasksRef.current.length % DEEP_RESEARCH_STATUS_FALLBACKS.length];
+        }
         if (normalizedStatus) {
           setSearchStatus(normalizedStatus);
           setIsThinking(true);
@@ -558,18 +598,37 @@ const ChatPage = () => {
       },
       onEvent: (payload: any) => {
         const ev = payload?.event;
-        if (ev === "plan_detailed") {
+        if (ev === "plan") {
+          const queries = Array.isArray(payload.queries) ? payload.queries : [];
+          setResearchPlan({ goal: userInput || "Deep research", steps: queries.length > 0 ? queries.slice(0, 6) : ["Search trusted sources", "Read and compare evidence", "Write a clear final report"] });
+          updateResearchTask("start", { status: "done", label: "Research plan ready" });
+        } else if (ev === "search_query") {
+          const query = String(payload.query || "Searching sources");
+          upsertResearchTask({ id: `search-${query}`, kind: "search", label: `Searching: ${query}`, target: query, status: "running" });
+        } else if (ev === "source_engine") {
+          const engine = String(payload.engine || "Source");
+          const count = Number(payload.count || 0);
+          upsertResearchTask({ id: `engine-${engine}-${researchTasksRef.current.length}`, kind: engine.toLowerCase().includes("wiki") ? "wiki" : "academic", label: `${engine} returned ${count} result${count === 1 ? "" : "s"}`, target: engine, status: "done" });
+        } else if (ev === "deep_read") {
+          const url = String(payload.url || "Source");
+          upsertResearchTask({ id: `read-${url}`, kind: "read", label: "Reading source in depth", target: url, status: "running" });
+        } else if (ev === "multi_source_started") {
+          const query = String(payload.query || "multiple sources");
+          upsertResearchTask({ id: `multi-${query}`, kind: "analyze", label: `Reviewing sources for ${query}`, target: query, status: "running" });
+        } else if (ev === "plan_detailed") {
           setResearchPlan({ goal: payload.goal || "", steps: Array.isArray(payload.steps) ? payload.steps : [] });
         } else if (ev === "clarify_questions") {
           if (Array.isArray(payload.questions)) setClarifyQs(payload.questions);
         } else if (ev === "task_start") {
           const t: ResearchTask = { id: payload.id, kind: payload.kind || "search", label: payload.label || "Working…", target: payload.target, status: "running" };
-          setResearchTasks((prev) => [...prev.filter((x) => x.id !== t.id), t]);
+          upsertResearchTask(t);
         } else if (ev === "task_update") {
-          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, label: payload.label || x.label, target: payload.target ?? x.target } : x));
+          updateResearchTask(payload.id, { label: payload.label, target: payload.target });
         } else if (ev === "task_done") {
-          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, status: payload.error ? "error" : "done", summary: payload.summary } : x));
+          updateResearchTask(payload.id, { status: payload.error ? "error" : "done", summary: payload.summary });
         } else if (ev === "final_summary") {
+          researchTasksRef.current = researchTasksRef.current.map((task) => task.status === "running" ? { ...task, status: "done" } : task);
+          setResearchTasks(researchTasksRef.current);
           setResearchSummary({
             what_i_did: payload.what_i_did,
             key_findings: payload.key_findings,
@@ -584,6 +643,10 @@ const ChatPage = () => {
       onDone: async () => {
         setIsLoading(false);setIsThinking(false);setSearchStatus("");
         isSubmittingRef.current = false;
+        if (isDeepResearch && researchTasksRef.current.some((task) => task.status === "running")) {
+          researchTasksRef.current = researchTasksRef.current.map((task) => task.status === "running" ? { ...task, status: "done" } : task);
+          setResearchTasks(researchTasksRef.current);
+        }
         if (presenceChannelRef.current && chatUserId) {
           presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, busy: false } });
         }
@@ -606,6 +669,7 @@ const ChatPage = () => {
           });
           const dbMode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
           await supabase.from("conversations").update({ updated_at: new Date().toISOString(), mode: dbMode } as any).eq("id", resolvedConversationId);
+          window.dispatchEvent(new CustomEvent("megsy:conversations-changed"));
         }
       },
       onError: (err) => {

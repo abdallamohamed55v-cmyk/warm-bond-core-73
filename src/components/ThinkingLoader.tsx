@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 interface ThinkingLoaderProps {
   searchStatus?: string;
@@ -19,7 +19,18 @@ const ThinkingLoader = ({ searchStatus }: ThinkingLoaderProps) => {
         >
           <path d="M50 5 L60 40 L95 50 L60 60 L50 95 L40 60 L5 50 L40 40 Z" fill="currentColor" />
         </motion.svg>
-        <span className="text-sm font-bold text-foreground/90">{displayText}</span>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={displayText}
+            initial={{ opacity: 0, y: 6, filter: "blur(6px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -6, filter: "blur(6px)" }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="text-sm font-bold text-foreground/90"
+          >
+            {displayText}
+          </motion.span>
+        </AnimatePresence>
       </div>
     </div>
   );
