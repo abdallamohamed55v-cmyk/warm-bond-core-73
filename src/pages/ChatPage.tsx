@@ -263,6 +263,20 @@ const ChatPage = () => {
       })));
       setTimeout(() => scrollToBottom(), 150);
     }
+    // Load members for this conversation so names/avatars render correctly
+    const { data: memberRows } = await supabase.from("conversation_members").select("user_id, role").eq("conversation_id", id);
+    if (memberRows && memberRows.length > 0) {
+      const ids = memberRows.map((m: any) => m.user_id);
+      const { data: profs } = await supabase.from("profiles").select("id, display_name, avatar_url").in("id", ids);
+      const profMap: Record<string, any> = {};
+      (profs || []).forEach((p: any) => { profMap[p.id] = p; });
+      setMembers(memberRows.map((m: any) => ({
+        id: m.user_id, email: "", role: m.role,
+        name: profMap[m.user_id]?.display_name, avatar: profMap[m.user_id]?.avatar_url,
+      })));
+    } else {
+      setMembers([]);
+    }
   };
 
   const handleCancel = () => {
