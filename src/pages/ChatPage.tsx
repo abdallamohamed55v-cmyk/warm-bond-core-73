@@ -518,6 +518,7 @@ const ChatPage = () => {
       deepResearch: isDeepResearch,
       chatMode: chatMode,
       user_id: chatUserId || undefined,
+      conversation_id: conversationId || undefined,
       computerUseEnabled,
       activeAgent: chatMode !== "normal" ? chatMode : (selectedAgent?.id || undefined),
       selectedModel: selectedModel ? { id: selectedModel.id, cost: selectedModel.cost } : undefined,
