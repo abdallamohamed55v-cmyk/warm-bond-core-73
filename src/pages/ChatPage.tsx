@@ -1635,6 +1635,39 @@ Ask me anything to get started!`;
                 <AnimatePresence>
                   {plusMenuOpen && renderPlusMenu()}
                 </AnimatePresence>
+                {mentionQuery && members.filter((m) => (m.name || "").toLowerCase().includes(mentionQuery.q.toLowerCase())).length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="absolute bottom-full left-0 right-0 mb-2 mx-3 rounded-xl border border-border bg-popover shadow-lg overflow-hidden z-30"
+                  >
+                    {members
+                      .filter((m) => (m.name || "").toLowerCase().includes(mentionQuery.q.toLowerCase()))
+                      .slice(0, 5)
+                      .map((m) => {
+                        const c = colorForUser(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => insertMention(m.name || "Member")}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent text-left transition-colors"
+                          >
+                            {m.avatar ? (
+                              <img src={m.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                                {(m.name || "?")[0]?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-sm flex-1 truncate">{m.name || "Member"}</span>
+                            {onlineUsers.has(m.id) && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                          </button>
+                        );
+                      })}
+                  </motion.div>
+                )}
                 <AnimatedInput
                   value={input}
                   onChange={setInput}
