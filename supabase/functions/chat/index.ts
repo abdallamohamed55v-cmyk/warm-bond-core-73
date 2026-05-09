@@ -14,6 +14,31 @@ const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
 const COMPLEX_MODEL = "moonshotai/kimi-k2.5:nitro";
 const OPENROUTER_FALLBACK_MODELS = [DEFAULT_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite-preview-09-2025", "google/gemini-3-flash-preview"];
 
+// ── Megsy v1 Tier System ──
+// Each tier maps to a primary model (simple tasks) and a power model (complex tasks).
+// "Megsy Max" uses an ensemble of strongest models — gives the feel of a 1T+ parameter giant.
+type MegsyTier = "lite" | "pro" | "max";
+
+const MEGSY_TIERS: Record<MegsyTier, { primary: string; power: string; label: string }> = {
+  lite: { primary: "google/gemini-2.5-flash-lite", power: "google/gemini-2.5-flash", label: "Megsy Lite" },
+  pro: { primary: "google/gemini-2.5-flash", power: "moonshotai/kimi-k2.5:nitro", label: "Megsy Pro" },
+  max: { primary: "moonshotai/kimi-k2.5:nitro", power: "anthropic/claude-sonnet-4.5", label: "Megsy Max" },
+};
+
+function resolveTier(raw: unknown, userPlan: string | null | undefined): MegsyTier {
+  const tier = (typeof raw === "string" ? raw.toLowerCase().replace(/^megsy-/, "") : "lite") as MegsyTier;
+  if (!["lite", "pro", "max"].includes(tier)) return "lite";
+  // Gating: only paid plans can use pro/max
+  const plan = (userPlan || "free").toLowerCase();
+  const isPaid = plan !== "free" && plan !== "trial";
+  if ((tier === "pro" || tier === "max") && !isPaid) return "lite";
+  return tier;
+}
+
+function pickModelForTier(tier: MegsyTier, isComplex: boolean): string {
+  return isComplex ? MEGSY_TIERS[tier].power : MEGSY_TIERS[tier].primary;
+}
+
 function safeParseToolArgs(raw: string): Record<string, unknown> {
   try {
     return JSON.parse(raw);
