@@ -13,6 +13,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 export async function streamChat({
   messages,
   model,
+  tier,
   searchEnabled,
   deepResearch,
   chatMode,
@@ -32,6 +33,7 @@ export async function streamChat({
 }: {
   messages: Msg[];
   model?: string;
+  tier?: "lite" | "pro" | "max";
   searchEnabled?: boolean;
   deepResearch?: boolean;
   chatMode?: string;
@@ -57,7 +59,7 @@ export async function streamChat({
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ messages, model, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel }),
+      body: JSON.stringify({ messages, model, tier, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel }),
       signal,
     });
 

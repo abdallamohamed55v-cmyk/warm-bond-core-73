@@ -105,6 +105,11 @@ const ChatPage = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationTitle, setConversationTitle] = useState("");
   const [searchEnabled, setSearchEnabled] = useState(true);
+  const [megsyTier, setMegsyTier] = useState<"lite" | "pro" | "max">(() => {
+    if (typeof window === "undefined") return "lite";
+    return (localStorage.getItem("megsy_tier") as any) || "lite";
+  });
+  const [userPlan, setUserPlan] = useState<string>("free");
   const [computerUseEnabled, setComputerUseEnabled] = useState(true);
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [attachedFiles, setAttachedFiles] = useState<{name: string;type: string;data: string;}[]>([]);
@@ -166,10 +171,18 @@ const ChatPage = () => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
       setChatUserId(user.id);
-      const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+      const { data: profile } = await supabase.from("profiles").select("display_name, plan").eq("id", user.id).maybeSingle();
       const name = (profile as any)?.display_name || (user.user_metadata?.full_name as string) || (user.email?.split("@")[0] ?? "");
       const firstName = (name || "").split(/\s+/)[0];
       setUserName(firstName);
+      setUserPlan((profile as any)?.plan || "free");
+      // Pull preferred tier from personalization
+      const { data: pers } = await supabase.from("ai_personalization").select("preferred_tier").eq("user_id", user.id).maybeSingle();
+      const prefTier = (pers as any)?.preferred_tier;
+      if (prefTier && ["lite", "pro", "max"].includes(prefTier)) {
+        setMegsyTier(prefTier as any);
+        localStorage.setItem("megsy_tier", prefTier);
+      }
     });
   }, []);
 
@@ -501,7 +514,7 @@ const ChatPage = () => {
     const isDeepResearch = chatMode === "deep-research";
 
     await streamChat({
-      messages: allMessages, model: MEGSY_MODEL, searchEnabled: searchEnabled || isDeepResearch,
+      messages: allMessages, model: MEGSY_MODEL, tier: megsyTier, searchEnabled: searchEnabled || isDeepResearch,
       deepResearch: isDeepResearch,
       chatMode: chatMode,
       user_id: chatUserId || undefined,
@@ -1290,6 +1303,43 @@ Ask me anything to get started!`;
                   />
                 </div>
               </motion.button>
+
+              {/* Megsy tier picker */}
+              <div className="px-3 py-2.5 rounded-2xl bg-foreground/[0.03] border border-foreground/5">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Megsy v1 Model</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([
+                    { id: "lite" as const, label: "Lite", desc: "سريع", locked: false },
+                    { id: "pro" as const, label: "Pro", desc: "ذكي", locked: userPlan === "free" || userPlan === "trial" },
+                    { id: "max" as const, label: "Max", desc: "1T+", locked: userPlan === "free" || userPlan === "trial" },
+                  ]).map(t => (
+                    <motion.button
+                      key={t.id}
+                      whileTap={{ scale: 0.96 }}
+                      transition={iosSpring}
+                      onClick={() => {
+                        if (t.locked) {
+                          toast.info("Megsy " + t.label + " متاح للخطط المدفوعة فقط");
+                          return;
+                        }
+                        setMegsyTier(t.id);
+                        localStorage.setItem("megsy_tier", t.id);
+                        // Persist preference
+                        if (chatUserId) {
+                          supabase.from("ai_personalization").upsert({ user_id: chatUserId, preferred_tier: t.id } as any, { onConflict: "user_id" }).then(() => {});
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl transition-colors ${megsyTier === t.id ? "bg-primary text-primary-foreground" : "bg-foreground/[0.04] text-foreground/80 hover:bg-foreground/[0.08]"}`}
+                    >
+                      <span className="text-[12.5px] font-semibold flex items-center gap-1">
+                        {t.label}
+                        {t.locked && <span className="text-[9px] opacity-70">🔒</span>}
+                      </span>
+                      <span className="text-[9.5px] opacity-70">{t.desc}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
 
               {/* Tools row */}
               <motion.button

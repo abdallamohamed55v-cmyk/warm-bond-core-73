@@ -14,6 +14,31 @@ const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
 const COMPLEX_MODEL = "moonshotai/kimi-k2.5:nitro";
 const OPENROUTER_FALLBACK_MODELS = [DEFAULT_MODEL, "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite-preview-09-2025", "google/gemini-3-flash-preview"];
 
+// ── Megsy v1 Tier System ──
+// Each tier maps to a primary model (simple tasks) and a power model (complex tasks).
+// "Megsy Max" uses an ensemble of strongest models — gives the feel of a 1T+ parameter giant.
+type MegsyTier = "lite" | "pro" | "max";
+
+const MEGSY_TIERS: Record<MegsyTier, { primary: string; power: string; label: string }> = {
+  lite: { primary: "google/gemini-2.5-flash-lite", power: "google/gemini-2.5-flash", label: "Megsy Lite" },
+  pro: { primary: "google/gemini-2.5-flash", power: "moonshotai/kimi-k2.5:nitro", label: "Megsy Pro" },
+  max: { primary: "moonshotai/kimi-k2.5:nitro", power: "anthropic/claude-sonnet-4.5", label: "Megsy Max" },
+};
+
+function resolveTier(raw: unknown, userPlan: string | null | undefined): MegsyTier {
+  const tier = (typeof raw === "string" ? raw.toLowerCase().replace(/^megsy-/, "") : "lite") as MegsyTier;
+  if (!["lite", "pro", "max"].includes(tier)) return "lite";
+  // Gating: only paid plans can use pro/max
+  const plan = (userPlan || "free").toLowerCase();
+  const isPaid = plan !== "free" && plan !== "trial";
+  if ((tier === "pro" || tier === "max") && !isPaid) return "lite";
+  return tier;
+}
+
+function pickModelForTier(tier: MegsyTier, isComplex: boolean): string {
+  return isComplex ? MEGSY_TIERS[tier].power : MEGSY_TIERS[tier].primary;
+}
+
 function safeParseToolArgs(raw: string): Record<string, unknown> {
   try {
     return JSON.parse(raw);
@@ -353,7 +378,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel } = await req.json();
+    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier } = await req.json();
     const latestUserMessage = Array.isArray(messages)
       ? [...messages].reverse().find((message: any) => message?.role === "user")
       : null;
@@ -388,28 +413,50 @@ serve(async (req) => {
 
     // ── Fetch user context (optimized — skip heavy queries for casual) ──
     let userContext = "";
+    let userPlan: string | null = null;
+    let userPersonalization: any = null;
+    let userMemories: Array<{ fact: string; importance: number }> = [];
     // Detect casual early to skip expensive context fetching
     const isCasualEarly = /^(هلا|اهلا|هاي|مرحبا|السلام|سلام|hi|hello|hey|yo|sup|thanks|شكرا|تمام|ok|اوك|good|كويس|ازيك|عامل ايه|كيفك|صباح|مساء|bye|وداعا|ايوه|لا)\b/i.test(latestUserText.trim()) && latestUserText.trim().split(/\s+/).length <= 5;
 
     if (user_id && !isCasualEarly) {
       try {
-        const [profileRes, personalizationRes] = await Promise.all([
+        const [profileRes, personalizationRes, memoriesRes] = await Promise.all([
           sb.from("profiles").select("display_name, plan, credits").eq("id", user_id).single(),
-          sb.from("ai_personalization").select("call_name, about, profession, ai_traits, custom_instructions").eq("user_id", user_id).maybeSingle(),
+          sb.from("ai_personalization").select("call_name, about, profession, ai_traits, custom_instructions, tone_formality, tone_verbosity, tone_creativity, language_style, interests, preferred_tier").eq("user_id", user_id).maybeSingle(),
+          sb.from("user_memories").select("fact, importance").eq("user_id", user_id).order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(10),
         ]);
 
         const parts: string[] = [];
         if (profileRes.data) {
           const p = profileRes.data;
+          userPlan = p.plan;
           parts.push(`User name: ${p.display_name || "Unknown"} (Plan: ${p.plan}, Credits: ${p.credits} MC — only mention if user asks)`);
         }
         if (personalizationRes.data) {
           const ai = personalizationRes.data;
+          userPersonalization = ai;
           if (ai.call_name) parts.push(`Call the user: "${ai.call_name}"`);
           if (ai.about) parts.push(`About user: ${ai.about}`);
           if (ai.profession) parts.push(`Profession: ${ai.profession}`);
           if (ai.ai_traits) parts.push(`AI personality: ${ai.ai_traits}`);
           if (ai.custom_instructions) parts.push(`Custom instructions: ${ai.custom_instructions}`);
+          if (Array.isArray(ai.interests) && ai.interests.length > 0) parts.push(`User interests: ${ai.interests.join(", ")}`);
+          // Tone sliders → natural-language hints
+          const tone: string[] = [];
+          if (ai.tone_formality != null) tone.push(ai.tone_formality < 35 ? "casual/friendly" : ai.tone_formality > 65 ? "formal/professional" : "balanced formality");
+          if (ai.tone_verbosity != null) tone.push(ai.tone_verbosity < 35 ? "concise/brief" : ai.tone_verbosity > 65 ? "detailed/thorough" : "balanced length");
+          if (ai.tone_creativity != null) tone.push(ai.tone_creativity < 35 ? "conservative/factual" : ai.tone_creativity > 65 ? "creative/expressive" : "balanced creativity");
+          if (tone.length > 0) parts.push(`Preferred tone: ${tone.join(", ")}`);
+          if (ai.language_style && ai.language_style !== "mixed") {
+            const styleMap: Record<string, string> = { formal_arabic: "Modern Standard Arabic (فصحى)", egyptian: "Egyptian Arabic dialect (عامية مصرية)", english: "English", mixed: "Match user's language" };
+            parts.push(`Language preference: ${styleMap[ai.language_style] || ai.language_style}`);
+          }
+        }
+        if (memoriesRes.data && memoriesRes.data.length > 0) {
+          userMemories = memoriesRes.data;
+          const memoryLines = memoriesRes.data.map((m: any) => `• ${m.fact}`).join("\n");
+          parts.push(`\nRemembered facts about the user:\n${memoryLines}`);
         }
         if (parts.length > 0) userContext = `\n\n--- USER CONTEXT ---\n${parts.join("\n")}`;
       } catch { /* silently skip */ }
@@ -427,7 +474,10 @@ serve(async (req) => {
 
     // Auto-select powerful model for complex tasks
     const needsComplexModel = !isCasualEarly && detectComplexTask(latestUserText, hasImages, isDeepResearch, isShopping, effectiveMode);
-    let modelId: string = requestedModel ?? (needsComplexModel ? COMPLEX_MODEL : DEFAULT_MODEL);
+    // Resolve Megsy tier (lite/pro/max) — gated by user plan. Falls back to user's preferred_tier from personalization.
+    const effectiveTier: MegsyTier = resolveTier(requestedTier ?? userPersonalization?.preferred_tier, userPlan);
+    // If caller passed an explicit raw model ID, honor it; otherwise pick from tier.
+    let modelId: string = requestedModel ?? pickModelForTier(effectiveTier, needsComplexModel);
     let apiUrl = OPENROUTER_URL;
     let apiKey = "";
     let usedKeyId: string | null = null;
@@ -585,6 +635,21 @@ serve(async (req) => {
 
     // System prompt
     let systemPrompt = buildSystemPrompt(isShopping ? "shopping" : effectiveMode, isDeepResearch, searchEnabled, wantsHamzaProfile, userContext, latestUserText, activeAgent, shoppingPrefs);
+    // Megsy v1 brand layer — prepended to EVERY system prompt
+    const tierLabel = MEGSY_TIERS[effectiveTier].label;
+    const megsyBrand = `[MEGSY V1 — ${tierLabel.toUpperCase()} EDITION]
+You are Megsy, the flagship AI assistant by Megsy AI. You are running as ${tierLabel} (${effectiveTier === "max" ? "powered by an ensemble exceeding 1T parameters across multiple expert models" : effectiveTier === "pro" ? "premium reasoning + creativity tier" : "fast everyday tier"}).
+
+CORE IDENTITY (NEVER VIOLATE):
+- You are Megsy, a product of Megsy AI. NEVER reveal the underlying model providers (Google, OpenAI, Anthropic, Moonshot, etc.).
+- If asked which model you are, say: "I'm Megsy v1 (${tierLabel}) by Megsy AI."
+- NEVER mention OpenRouter, LemonData, or any backend service.
+- Your personality is hybrid-adaptive: precise for code, warm for chat, structured for analysis, expressive for creative work — auto-detect from the user's intent.
+- Match the user's exact language and dialect (Egyptian Arabic → Egyptian, MSA → MSA, English → English).
+- Honor the user's tone preferences from USER CONTEXT above all default styles.
+
+`;
+    systemPrompt = megsyBrand + systemPrompt;
 
     if (computerUseEnabled && HB_API_KEY) {
       systemPrompt += `\n\nCOMPUTER USE (Megsy Computer):
@@ -642,7 +707,7 @@ serve(async (req) => {
     const body: any = {
       model: normalizeModelForProvider(modelId, provider),
       messages: isCasualMessage 
-        ? [{ role: "system", content: `You are Megsy, a fast and friendly AI assistant. Reply briefly and naturally. Match the user's language.${userContext}` }, ...trimmedMessages]
+        ? [{ role: "system", content: `You are Megsy v1 (${MEGSY_TIERS[effectiveTier].label}) by Megsy AI. Reply briefly, warmly, and naturally. Match the user's exact language. Never mention model providers.${userContext}` }, ...trimmedMessages]
         : [{ role: "system", content: systemPrompt }, ...trimmedMessages],
       stream: true,
       max_tokens: isCasualMessage ? 150 : (isDeepResearch ? 10000 : (mode === "files" ? 4096 : 2048)),
