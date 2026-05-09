@@ -15,6 +15,11 @@ import FancyButton from "@/components/FancyButton";
 import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
+import DeepResearchToggle from "@/components/research/DeepResearchToggle";
+import ClarifyDialog, { type ClarifyQuestion } from "@/components/research/ClarifyDialog";
+import type { ResearchTask } from "@/components/research/ResearchTaskTimeline";
+import type { ResearchPlan } from "@/components/research/ResearchPlanCard";
+import type { ResearchSummary } from "@/components/research/ResearchSummaryCard";
 import ConnectorsDialog from "@/components/ConnectorsDialog";
 import GlowButton from "@/components/GlowButton";
 
@@ -114,6 +119,10 @@ const ChatPage = () => {
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [attachedFiles, setAttachedFiles] = useState<{name: string;type: string;data: string;}[]>([]);
   const [searchStatus, setSearchStatus] = useState<string>("");
+  const [researchPlan, setResearchPlan] = useState<ResearchPlan | null>(null);
+  const [researchTasks, setResearchTasks] = useState<ResearchTask[]>([]);
+  const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
+  const [clarifyQs, setClarifyQs] = useState<ClarifyQuestion[] | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareMode, setShareMode] = useState<"private" | "public">("public");
   const [isShared, setIsShared] = useState(false);
