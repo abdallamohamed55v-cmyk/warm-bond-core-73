@@ -203,7 +203,10 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
   content: string; 
   onLinkClick: (e: React.MouseEvent<HTMLAnchorElement>, href: string) => void;
   onPreviewCode?: (code: string, lang: string) => void;
-}) => (
+}) => {
+  const formatted = formatRawUrls(content);
+  const sources = useMemo(() => collectSourceUrls(formatted), [formatted]);
+  return (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
     components={{
@@ -211,11 +214,52 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
       li: ({ children }) => <li><BidiText>{children}</BidiText></li>,
       strong: ({ children }) => <strong><BidiText>{children}</BidiText></strong>,
       em: ({ children }) => <em><BidiText>{children}</BidiText></em>,
-      a: ({ href, children }) => (
-        <a href={href} onClick={(e) => href && onLinkClick(e, href)} className="text-primary underline underline-offset-2 cursor-pointer hover:opacity-80">
-          {children}
-        </a>
-      ),
+      a: ({ href, children }) => {
+        if (!href || !/^https?:\/\//i.test(href)) {
+          return <a href={href} className="text-primary underline underline-offset-2">{children}</a>;
+        }
+        const idx = sources.indexOf(href);
+        const number = idx >= 0 ? idx + 1 : 1;
+        const domain = extractDomainSafe(href);
+        const text = typeof children === "string" ? children : "";
+        // Render the linked text inline + a small numbered citation chip with hover card
+        return (
+          <InlineCitation>
+            <InlineCitationText>
+              <a
+                href={href}
+                onClick={(e) => onLinkClick(e, href)}
+                className="text-primary underline underline-offset-2 cursor-pointer hover:opacity-80"
+              >
+                {children}
+              </a>
+            </InlineCitationText>
+            <InlineCitationCard>
+              <InlineCitationCardTrigger sources={[href]}>
+                <span className="text-[10px] font-medium">{number}</span>
+              </InlineCitationCardTrigger>
+              <InlineCitationCardBody>
+                <InlineCitationCarousel>
+                  <InlineCitationCarouselHeader>
+                    <InlineCitationCarouselPrev />
+                    <InlineCitationCarouselIndex />
+                    <InlineCitationCarouselNext />
+                  </InlineCitationCarouselHeader>
+                  <InlineCitationCarouselContent>
+                    <InlineCitationCarouselItem>
+                      <InlineCitationSource
+                        title={text || domain}
+                        url={href}
+                        description={domain}
+                      />
+                    </InlineCitationCarouselItem>
+                  </InlineCitationCarouselContent>
+                </InlineCitationCarousel>
+              </InlineCitationCardBody>
+            </InlineCitationCard>
+          </InlineCitation>
+        );
+      },
       code: ({ className, children, ...props }) => {
         const match = /language-(\w+)/.exec(className || "");
         const lang = match ? match[1] : undefined;
@@ -260,9 +304,10 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
       td: ({ children }) => <td className="px-3 py-2 text-xs text-muted-foreground border-t border-border/50">{children}</td>,
     }}
   >
-    {formatRawUrls(content)}
+    {formatted}
   </ReactMarkdown>
-);
+  );
+};
 
 const SelectTextModal = ({ open, onClose, text, onCopy }: { open: boolean; onClose: () => void; text: string; onCopy: () => void }) => (
   <AnimatePresence>
