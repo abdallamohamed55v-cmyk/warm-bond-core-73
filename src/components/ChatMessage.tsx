@@ -353,6 +353,17 @@ const ReadersRow = ({ readers, align }: { readers: { user_id: string; name?: str
   );
 };
 
+const renderTextWithMentions = (text: string) => {
+  const parts = text.split(/(@[A-Za-z0-9_]+)/g);
+  return parts.map((p, i) =>
+    p.startsWith("@") ? (
+      <span key={i} className="px-1 rounded bg-white/25 font-semibold">{p}</span>
+    ) : (
+      <span key={i}>{p}</span>
+    )
+  );
+};
+
 const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, senderName, senderAvatar, isOtherMember, bubbleColor, messageId, reactions, onToggleReaction, currentUserId, readers, showReaders }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState<{ code: string; lang: string } | null>(null);
