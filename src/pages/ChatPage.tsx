@@ -1144,14 +1144,22 @@ Ask me anything to get started!`;
     handleNewChat();
   };
 
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingOriginal, setEditingOriginal] = useState<string>("");
   const handleEditUserMessageAt = useCallback((index: number, messageText: string) => {
+    setEditingIndex(index);
+    setEditingOriginal(messageText);
     setInput(messageText);
-    setMessages((prev) => {
-      const next = [...prev];
-      if (!next[index] || next[index].role !== "user") return prev;
-      next.splice(index, next[index + 1]?.role === "assistant" ? 2 : 1);
-      return next;
-    });
+    // Focus textarea on next tick
+    setTimeout(() => {
+      const ta = document.querySelector<HTMLTextAreaElement>('textarea');
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }, 50);
+  }, []);
+  const cancelEdit = useCallback(() => {
+    setEditingIndex(null);
+    setEditingOriginal("");
+    setInput("");
   }, []);
 
   const hasConversation = messages.length > 0;
