@@ -36,6 +36,13 @@ interface ChatMessageProps {
   senderAvatar?: string | null;
   isOtherMember?: boolean;
   bubbleColor?: { bg: string; text: string } | null;
+  messageId?: string;
+  reactions?: { id: string; emoji: string; user_id: string }[];
+  onToggleReaction?: (messageId: string, emoji: string) => void;
+  currentUserId?: string;
+  usersById?: Record<string, { name?: string; avatar?: string }>;
+  readers?: { user_id: string; name?: string; avatar?: string }[];
+  showReaders?: boolean;
 }
 
 const getDomain = (url: string) => {
