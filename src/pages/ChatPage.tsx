@@ -1415,7 +1415,7 @@ Ask me anything to get started!`;
                 onClick={() => setPlusView("models")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
               >
-                <Cpu className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <Bot className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
                 <span className="flex-1 text-[13.5px] text-foreground/85">Model</span>
                 <span className="text-[12px] font-semibold text-foreground/70 capitalize flex items-center gap-1">
                   {megsyTier}
