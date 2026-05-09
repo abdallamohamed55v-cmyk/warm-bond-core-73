@@ -1244,6 +1244,20 @@ async function handleToolCalls(
     return /(who is|biography|profile|photos|images|picture|person|celebrity|founder|actor|singer|player|president|ممثل|مطرب|لاعب|شخص|شخصية|صور|صورة|مؤسس)/i.test(query);
   };
 
+  // Task event helpers (Deep Research v2 streaming)
+  const newTaskId = () => `t_${Math.random().toString(36).slice(2, 10)}`;
+  const emitTaskStart = (id: string, kind: string, label: string, target?: string) => {
+    if (!isDeepResearch) return;
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_start", id, kind, label, target })}\n\n`));
+  };
+  const emitTaskDone = (id: string, summary?: string, error?: string) => {
+    if (!isDeepResearch) return;
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_done", id, summary, error })}\n\n`));
+  };
+  const researchStartedAt = Date.now();
+  const researchSourcesSet = new Set<string>();
+  const researchChannels = new Set<string>();
+
   // ── Deep Research: announce the plan (sub-queries) up-front so the user sees what the agent will investigate.
   if (isDeepResearch) {
     const planQueries = validToolCalls
@@ -1255,8 +1269,17 @@ async function handleToolCalls(
       .filter(Boolean);
     if (planQueries.length > 0) {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "plan", queries: planQueries })}\n\n`));
+      // Rich plan_detailed event for new UI
+      const goal = `Investigate ${planQueries.length} angle${planQueries.length === 1 ? "" : "s"} and synthesize a well-sourced answer.`;
+      const steps: string[] = [];
+      planQueries.slice(0, 6).forEach((q) => steps.push(`Search the web for: ${q}`));
+      steps.push("Cross-reference with Wikipedia, arXiv, Reddit & Hacker News");
+      steps.push("Read the most relevant sources in depth");
+      steps.push("Synthesize findings into a structured report with citations");
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "plan_detailed", goal, steps })}\n\n`));
     }
   }
+
 
   for (const tc of validToolCalls) {
     try {
