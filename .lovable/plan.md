@@ -1,211 +1,190 @@
-## الهدف العام
+# Megsy Deep Research v2 — خطة شاملة
 
-نحوّل الوكيل من "موديل واحد + Tools" إلى **عائلة Megsy v1** — منتج كامل من 3 طبقات بأسماء تجارية تابعة لشركتنا، مع راوتر ذكي يخفّض التكلفة ويرفع الجودة، وأدوات داخلية أقوى، وصفحة تخصيص جديدة بالكامل.
-
----
-
-## 1) عائلة موديلات Megsy v1
-
-ثلاث طبقات يختارها المستخدم بنفسه (بدل ما يحس إنه موديل واحد):
-
-| الاسم التجاري | لمين | الموديل الفعلي خلف الكواليس | الخطة |
-|---|---|---|---|
-| **Megsy Lite** | الكل (مجاني) | `google/gemini-3-flash-preview` + `gemini-2.5-flash-lite` كـ fallback | Free |
-| **Megsy Pro** | المدفوعين | `gemini-3.1-pro-preview` + `gpt-5-mini` كـ aggregator | Pro/Plus |
-| **Megsy Max (1T-class)** | المدفوعين Premium | **Mixture-of-Agents**: `gpt-5.5` + `gemini-3.1-pro` + `claude` بالتوازي ثم `gpt-5.5-pro` كـ Aggregator نهائي | Max |
-
-> **فكرة الـ "1T"**: Megsy Max فعليًا مجموع بارامترات النماذج المشاركة في الـ ensemble يتجاوز تريليون — نوضّحها في صفحة الترقية بشفافية ("Powered by an ensemble exceeding 1T parameters").
-
-### آلية الاختيار
-- زر اختيار سريع في شريط الإدخال (شبيه بـ ChatGPT model picker).
-- المدفوع/غير المدفوع يُتحقق منه في `chat` edge function عبر `profiles.plan` — لو مستخدم Free ضرب Megsy Max → fallback لـ Pro + toast بالترقية.
+## الهدف
+1. نقل زر **Deep Research** فوق صندوق الإدخال مباشرة (toggle سريع).
+2. بناء نظام بحث عميق متطور: أسئلة استيضاحية ذكية + خطة تفصيلية + ستريمنغ حيّ لما يفعله النموذج لحظيًا + تقرير ختامي مختصر.
+3. استخدام مكوّن **Task Timeline** (نسخة محلية من ai-elements/task) لعرض السجل الحي.
 
 ---
 
-## 2) الراوتر الذكي (Cost-Saving + Quality)
+## 1) واجهة المستخدم — تغييرات الـ Frontend
 
-داخل `supabase/functions/chat/index.ts` نضيف طبقة `routeRequest()` تشتغل **قبل** نداء الموديل:
+### (أ) زر Deep Research فوق Composer
+- إضافة Pill toggle بسيط فوق `BottomInputBar` مباشرة (نفس مكان "Mode badge"):
+  - أيقونة `Globe` + نص "Deep Research" + Switch صغير.
+  - عند التفعيل: `setChatMode("deep-research")` + لون بنفسجي (`text-violet-400`).
+  - عند الإلغاء: يرجع لـ `normal`.
+- بجانبه pill ثانٍ اختياري: **Computer Use** (للحفاظ على نفس النمط البصري).
+- إخفاء Deep Research من قائمة الـ Agents (لأنه أصبح وصول مباشر).
 
-1. **Pre-classifier سريع** (`gemini-2.5-flash-lite`, ≈$0.0001/req) يصنّف الرسالة:
-   - `simple_chat` / `code` / `reasoning` / `creative` / `vision` / `tool_heavy`
-2. **Routing table** يحدد الموديل الأنسب داخل الطبقة المختارة:
-   - مثلاً Megsy Pro + `code` → `gpt-5.4-mini`
-   - Megsy Pro + `reasoning` → `gemini-3.1-pro-preview`
-3. **Megsy Max Mode**: لو السؤال صنّف `reasoning` أو `code` معقّد → نشغل MoA متوازي (3 موديلات) ثم Aggregator. غير كده → موديل واحد قوي (توفير تكلفة).
-4. **Cost guard**: لو المستخدم Free تجاوز 80% من حصته اليومية → نخفّض تلقائي لـ `gemini-2.5-flash-lite`.
+### (ب) مكوّن `ResearchTaskTimeline` (جديد)
+- ملف جديد: `src/components/research/ResearchTaskTimeline.tsx`.
+- يحاكي الـ `Task` component من ai-elements (بدون npm dep — نبنيه بأنفسنا بـ Tailwind + framer-motion).
+- يحتوي على:
+  - **TaskTrigger**: عنوان قابل للطي (Collapsible) — مثلاً "Researching… 12 sources scanned".
+  - **TaskContent**: قائمة `TaskItem` متحركة (slide-in من اليسار).
+  - **TaskItemFile**: chip صغير يحمل أيقونة (Search/FileText/Globe/Brain) + اسم المصدر/الاستعلام.
+- أمثلة على عناصر:
+  ```
+  🔍 Searching "GPT-5 benchmarks vs Claude 4"
+  📖 Reading [openai.com/blog/gpt-5]
+  🧠 Analyzing 8 sources for patterns
+  🌐 Cross-checking with arXiv: "transformer scaling laws"
+  ✅ Synthesizing findings
+  ```
+- Auto-scroll لآخر مهمة + حالة `running | done | error` لكل عنصر.
 
-**النتيجة المتوقعة**: ~50–70% توفير على الرسائل العادية، وجودة أعلى من أي موديل منفرد على الأسئلة الصعبة (مثبت بحثيًا في ورقة MoA).
+### (ج) مكوّن `ResearchPlanCard` (جديد)
+- يظهر فور انتهاء مرحلة التخطيط، قبل بدء التنفيذ.
+- بطاقة بنفسجية بـ:
+  - **العنوان**: "Research Plan"
+  - **الهدف**: ملخص سؤال المستخدم بصيغة بحثية.
+  - **الخطوات** (مرقّمة 1→N): مثل
+    1. Define core terms and scope
+    2. Gather primary sources (academic + news)
+    3. Cross-reference with expert commentary
+    4. Identify counter-arguments and limitations
+    5. Synthesize into structured report
+  - **زر**: "Approve & Start" / "Refine Plan" (اختياري — افتراضي auto-start بعد 2 ثانية).
+
+### (د) مكوّن `ClarifyDialog` (جديد)
+- يظهر فقط حين يقرر النموذج أن السؤال غامض (≤30% من الحالات).
+- بطاقة فوق الـ Composer بـ 1-3 أسئلة استيضاحية ذكية:
+  - إما اختيارات زر سريعة (chips)
+  - أو حقل إجابة قصيرة
+- زر "Skip & let Megsy decide" متاح دائمًا.
+- بعد الإجابة → يُحقن السياق ويبدأ التخطيط.
+
+### (هـ) مكوّن `ResearchSummaryCard` (جديد)
+- يظهر بعد انتهاء البحث، فوق التقرير الكامل (`DeepResearchCard` الحالي).
+- يحتوي:
+  - **What I did**: 4-6 نقاط مختصرة (مثل "بحثت في 23 مصدرًا، قرأت 8 مقالات كاملة، قارنت 3 وجهات نظر متضاربة").
+  - **Key findings**: 3 نقاط جوهرية.
+  - **Sources scanned**: عدد + أيقونات قنوات (Web/Academic/News/Reddit).
+  - **Time taken**: مدة التنفيذ.
+  - **Confidence**: مرتفع/متوسط/منخفض مع تبرير سطري.
 
 ---
 
-## 3) الانتقال لـ Vercel AI SDK
+## 2) الـ Backend — أحداث SSE جديدة في `supabase/functions/chat/index.ts`
 
-نستبدل الـ raw OpenRouter fetch + SSE parsing الحالي في `chat/index.ts` (1890 سطر) بـ Vercel AI SDK + Lovable AI Gateway:
+سنوسّع تدفق الأحداث (data: lines) بأنواع جديدة:
 
-- `streamText` بدل الباي-هاند streaming
-- `tool({ inputSchema, execute })` لكل أداة
-- `stopWhen: stepCountIs(50)` للأجنت loop
-- `convertToModelMessages` للملفات/الصور
-- نخلي `LOVABLE_API_KEY` كـ provider header (موجود فعلاً)
+| Event | Payload | متى يُرسَل |
+|---|---|---|
+| `clarify_questions` | `{ questions: [{id, text, options?}] }` | إذا اعتبر النموذج السؤال غامضًا |
+| `plan_detailed` | `{ goal, steps: string[] }` | بعد مرحلة التخطيط |
+| `task_start` | `{ id, kind, label, target? }` | عند بدء كل مهمة فرعية |
+| `task_update` | `{ id, label }` | تحديث حالة |
+| `task_done` | `{ id, summary?, error? }` | عند انتهاء مهمة |
+| `final_summary` | `{ what_i_did, key_findings, sources_count, channels, duration_ms, confidence }` | قبل التقرير النهائي |
 
-**فايدة**: كود أنظف بنسبة ~60%، صيانة أسهل، دعم تلقائي للموديلات الجديدة.
-
----
-
-## 4) الأدوات الداخلية الجديدة
-
-نضيف 3 أدوات قوية للموجود (web_search, browse, image, video, voice, shopping, canva):
-
-### أ) `code_interpreter` (E2B — السر موجود فعلاً)
-- ينفذ Python/JS في sandbox آمن.
-- يرجع: stdout, stderr, charts (PNG)، ملفات (CSV/JSON).
-- يستخدم لـ: حسابات معقدة، رسوم بيانية، تحليل بيانات، معالجة JSON كبير.
-- UI: بلوك code+output داخل الرسالة + زر "تنزيل الناتج".
-
-### ب) `long_term_memory`
-- جدول `user_memories(user_id, key, value, embedding, importance, created_at)`.
-- أداتان للموديل:
-  - `remember({ fact, importance })` — يحفظ حقيقة عن المستخدم.
-  - يتم **حقن تلقائي** لأهم 10 ذكريات في system prompt كل محادثة جديدة.
-- UI: قسم "Memories" في صفحة Personalization، المستخدم يقدر يحذف/يعدّل.
-
-### ج) `rag_attachment`
-- بدل قص أول 8000 حرف من الملف:
-  - نقطّع الملف لـ chunks (1000 char overlap 200).
-  - embeddings بـ `text-embedding-004` (Gemini مجاني).
-  - نخزن في `attachment_chunks` table (pgvector).
-  - الموديل يستدعي `search_attachment({ query, top_k: 5 })` ساعة الحاجة.
-- يدعم PDF حقيقي عبر `pdf-parse` في الـ edge function.
+(الـ events الحالية `plan` و `search_query` تبقى للتوافق الخلفي.)
 
 ---
 
-## 5) سيستم برومبت Megsy v1 (هجين متكيف)
+## 3) خوارزمية الـ Deep Research v2 (تعديل `chat/index.ts`)
 
-نبني `buildMegsyPrompt({ taskType, personalization, tier })` يولّد برومبت من 3 طبقات:
+عند `isDeepResearch === true` نُفعّل **DeepResearchOrchestrator** بدل التدفق الحالي:
 
+```text
+المرحلة 1: Classifier (gemini-2.5-flash-lite — رخيص)
+   → ambiguity_score (0-1), domain (tech/medical/finance/general/...)
+   → إذا score > 0.55 وليست أول رسالة بسياق → أرسل clarify_questions ووقّف
+   → غير ذلك → كمل
+
+المرحلة 2: Planner (gemini-2.5-flash + JSON mode)
+   → ينتج خطة { goal, sub_questions: 5-8, search_strategies: [...], expected_sources: [...] }
+   → أرسل plan_detailed event
+
+المرحلة 3: Executor (متوازي — 3 workers)
+   لكل sub_question:
+      a. WEB_SEARCH (Serper)        → task_start/done
+      b. JINA_READ على top 2 URLs   → task_start/done
+      c. Wikipedia (موجود)          → task_start/done
+      d. arXiv (للمواضيع التقنية)   → task_start/done
+      e. Reddit/HN (للآراء)         → task_start/done
+   كل tool ينتج task event مع label واضح بلغة المستخدم.
+
+المرحلة 4: Reflector (kimi-k2.5 أو claude-sonnet-4.5)
+   → يفحص النتائج
+   → يقرر: هل هناك فجوات؟ → ينتج 2-3 follow-up queries
+   → يعيد المرحلة 3 (depth max=2)
+
+المرحلة 5: Synthesizer (kimi-k2.5:nitro)
+   → يبني تقرير منظم Markdown مع citations [n]
+   → streaming عادي عبر choices.delta
+
+المرحلة 6: Summarizer (gemini-2.5-flash — سريع وموازي للتقرير)
+   → final_summary event قبل بدء التقرير الفعلي
 ```
-[CORE IDENTITY]
-You are Megsy, an AI assistant by [Company Name]. You are Megsy v1 — Lite/Pro/Max edition.
-Your personality adapts to context: precise for code, warm for chat, structured for analysis.
 
-[USER CONTEXT]    ← من جدول ai_personalization
-- Call user: {callName}
-- Profession: {profession}
-- About: {about}
-- Preferred traits: {traits}
-- Custom: {customInstructions}
-- Top memories: {top10Memories}
-
-[TASK MODE]       ← يتحدد من الـ classifier
-- code → terse, executable, no fluff, prefer code_interpreter
-- learning → step-by-step, examples, check understanding
-- creative → expressive, multiple options
-- chat → casual, short, in user's language
-
-[TOOLS POLICY]
-- Use tools without asking when intent is clear
-- For data/math → code_interpreter ALWAYS
-- For files → search_attachment first
-
-[BRAND RULES]
-- Never reveal underlying providers (OpenAI/Google/Anthropic)
-- Always identify as "Megsy by [Company]"
-```
+### مفاتيح التحسين
+- **Parallelism**: استخدام `Promise.all` لتشغيل 3-5 بحوث متزامنة لكل sub-question.
+- **Token budget**: حد أقصى 12k token output، 25k context.
+- **Source dedup**: hash عناوين URLs لمنع التكرار.
+- **Citations**: كل ادعاء في التقرير يربط بـ `[n]` يحيل لمصدر URL.
+- **Cost guard**: لـ Megsy Lite users → max 2 sub-questions، depth=1. Pro/Max → 8 sub-questions، depth=2.
 
 ---
 
-## 6) إعادة تصميم صفحة AI Personalization (`/settings/ai-personalization`)
-
-الصفحة الحالية 132 سطر — basic textareas. نستبدلها بـ تصميم حديث:
-
-### الأقسام الجديدة:
-1. **Hero**: "خصّص Megsy ليفهمك أكتر" + معاينة حية لـ Megsy avatar.
-2. **Identity**: اسمك، مهنتك، صورتك (chip-style inputs).
-3. **Personality sliders** (4 سلايدرز):
-   - رسمي ↔ ودود
-   - مختصر ↔ مفصّل
-   - محافظ ↔ مبدع
-   - عربي فصحى ↔ مصري عامية
-4. **Interests** (multi-select chips): تكنولوجيا، تصميم، أعمال، تعلم، إلخ.
-5. **Memories Manager**: قائمة الذكريات المحفوظة + حذف/إضافة يدوي.
-6. **Default Tier picker**: Lite / Pro / Max (مع badge "ترقية" للمدفوع).
-7. **Custom instructions**: textarea كبير في الآخر.
-8. **Live preview card**: يعرض sample reply بالستايل الحالي.
-
-### تصميم:
-- liquid-glass cards مع gradients (نفس design system).
-- Framer Motion للانتقالات.
-- زر Save sticky في الأسفل + auto-save toast.
+## 4) ربط الأحداث في `streamChat.ts`
+- توسيع `onEvent` ليتعامل مع الأنواع الجديدة (موجود أصلاً، نمرّر payload كما هو).
+- إضافة callbacks اختيارية مكرّسة:
+  - `onClarifyQuestions(qs)`
+  - `onPlan(plan)`
+  - `onTask(task)` (start/update/done)
+  - `onSummary(summary)`
 
 ---
 
-## 7) قاعدة البيانات (migrations)
-
-```sql
--- توسيع ai_personalization
-ALTER TABLE ai_personalization 
-  ADD COLUMN tone_formality int DEFAULT 50,
-  ADD COLUMN tone_verbosity int DEFAULT 50,
-  ADD COLUMN tone_creativity int DEFAULT 50,
-  ADD COLUMN language_style text DEFAULT 'mixed',
-  ADD COLUMN interests text[],
-  ADD COLUMN preferred_tier text DEFAULT 'lite';
-
--- ذاكرة طويلة المدى
-CREATE TABLE user_memories (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  fact text NOT NULL,
-  importance int DEFAULT 5,
-  embedding vector(768),
-  created_at timestamptz DEFAULT now()
-);
-
--- RAG للملفات
-CREATE TABLE attachment_chunks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  file_name text,
-  chunk_index int,
-  content text,
-  embedding vector(768),
-  created_at timestamptz DEFAULT now()
-);
-```
-+ RLS policies + pgvector indexes.
+## 5) ربط الـ State في `ChatPage.tsx`
+- state جديد:
+  - `researchClarify: { questions, messageId } | null`
+  - `researchPlan: { goal, steps, messageId } | null`
+  - `researchTasks: Map<messageId, Task[]>`
+  - `researchSummary: Map<messageId, Summary>`
+- الرسالة الـassistant الحالية تتلقى الـ render حسب الترتيب:
+  1. ClarifyDialog (إن وُجد) → ينتظر إجابة المستخدم
+  2. ResearchPlanCard
+  3. ResearchTaskTimeline (live)
+  4. ResearchSummaryCard
+  5. DeepResearchCard (التقرير الكامل — موجود)
 
 ---
 
-## 8) الـ OSS اللي هنستفيد منه
-
-| المشروع | الاستخدام |
-|---|---|
-| **Vercel AI SDK** | الـ runtime الأساسي للـ tools + streaming |
-| **togethercomputer/MoA** (paper + code) | منطق Mixture-of-Agents لـ Megsy Max |
-| **lm-sys/RouteLLM** | إلهام للـ classifier + routing logic |
-| **e2b-dev/E2B** | code_interpreter sandbox |
-| **pgvector** | RAG + memory embeddings |
+## 6) أمان وتكاليف
+- Deep Research v2 يكلّف ~5-10x من رد عادي → نخصم credits أعلى (نُحدث `deduct-credits` لتقبل `action_type: "deep_research"`).
+- Rate limit: max 1 deep-research نشط لكل مستخدم في وقت واحد.
+- Timeout كلي: 90 ثانية (بدل 60 الحالي).
 
 ---
 
-## 9) ترتيب التنفيذ (مراحل)
+## ملفات سيتم إنشاؤها/تعديلها
+**جديدة**:
+- `src/components/research/ResearchTaskTimeline.tsx`
+- `src/components/research/ResearchPlanCard.tsx`
+- `src/components/research/ResearchSummaryCard.tsx`
+- `src/components/research/ClarifyDialog.tsx`
+- `src/components/research/DeepResearchToggle.tsx` (الزر فوق الـcomposer)
 
-1. **DB migration** (الجداول + الأعمدة الجديدة + pgvector).
-2. **Refactor `chat` function** على AI SDK + إضافة الراوتر.
-3. **3 الأدوات الجديدة** (code_interpreter, memory, RAG).
-4. **Megsy v1 system prompt builder** + اختيار الطبقة.
-5. **Model picker UI** في صفحة الشات (Lite/Pro/Max).
-6. **إعادة تصميم AI Personalization Page** بالكامل.
-7. **اختبار end-to-end** + UI للـ tool calls الجديدة.
+**تعديلات**:
+- `src/pages/ChatPage.tsx` — state + render + DeepResearchToggle
+- `src/components/ChatMessage.tsx` — render مكوّنات البحث في رسائل المساعد
+- `src/lib/streamChat.ts` — callbacks جديدة
+- `supabase/functions/chat/index.ts` — DeepResearchOrchestrator (مرحلة Classifier→Planner→Executor→Reflector→Synthesizer→Summarizer)
 
 ---
 
-## ملاحظات مهمة
+## ترتيب التنفيذ
+1. مكوّنات الـ UI الأربعة + DeepResearchToggle (بدون منطق backend بعد — mock)
+2. توسيع SSE events في `chat/index.ts` (plan/task/summary)
+3. كتابة DeepResearchOrchestrator الكامل
+4. ربط الـ state والـ events في ChatPage
+5. اختبار end-to-end على سؤال معقد (مثل "قارن GPT-5 vs Claude 4 vs Gemini 3")
+6. ضبط التكاليف والـ rate limits
 
-- مفيش breaking changes للمستخدمين الحاليين — Megsy Lite = السلوك الحالي.
-- كل الموديلات موجودة فعلاً في Lovable AI Gateway (LOVABLE_API_KEY مفعّل).
-- E2B_API_KEY موجود في secrets، مش هنطلب أي مفاتيح إضافية.
-- التكلفة المتوقعة بعد الراوتر: انخفاض ~55% على الـ free tier.
+---
 
-**جاهز نبدأ التنفيذ بمجرد ما توافق.**
+## ملاحظة على المكتبة الـpaste
+الكود اللي بعتّه (`@icons-pack/react-simple-icons` + `@/components/ai-elements/task` + `nanoid`) من Vercel AI Elements — هذه المكتبة غير مثبتة في المشروع وتحتاج تبعيات إضافية. **الحل**: نبني نسخة محلية بنفس الـ API والـ visual style باستخدام `lucide-react` (موجود) + `framer-motion` (موجود) + `crypto.randomUUID()` (بدون nanoid). نفس النتيجة البصرية بدون dependencies جديدة.
