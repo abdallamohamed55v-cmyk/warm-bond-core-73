@@ -2053,6 +2053,13 @@ Ask me anything to get started!`;
 
         <ConnectorsDialog open={connectorsOpen} onOpenChange={setConnectorsOpen} onNavigateIntegrations={() => navigate("/settings/integrations")} />
 
+        <SkillsPickerSheet
+          open={skillsPickerOpen}
+          onClose={() => setSkillsPickerOpen(false)}
+          activeSkill={activeSkill}
+          onSelect={(s) => setActiveSkill(s)}
+        />
+
         {/* Share Dialog - Glass */}
         <Dialog open={shareDialogOpen} onOpenChange={(open) => {setShareDialogOpen(open);if (!open) setGeneratedShareUrl(null);}}>
           <DialogContent className={glassDialogClass}>
