@@ -185,7 +185,7 @@ const ChatPage = () => {
   const [selectedModel, setSelectedModel] = useState<AgentModel | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [userName, setUserName] = useState<string>("");
-  const [plusView, setPlusView] = useState<"main" | "tools">("main");
+  const [plusView, setPlusView] = useState<"main" | "tools" | "models">("main");
   const [userIntegrations, setUserIntegrations] = useState<string[]>([]);
 
   const upsertResearchTask = useCallback((task: ResearchTask) => {
