@@ -16,7 +16,7 @@ import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
 import { useActiveSkill, useSkills } from "@/hooks/useSkills";
-import SkillBadge from "@/components/SkillBadge";
+
 import SkillsPickerSheet from "@/components/chat/SkillsPickerSheet";
 import DeepResearchToggle from "@/components/research/DeepResearchToggle";
 import AnimatedHeadline from "@/components/research/AnimatedHeadline";
