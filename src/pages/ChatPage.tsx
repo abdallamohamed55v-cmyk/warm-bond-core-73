@@ -102,6 +102,14 @@ const normalizeStatusLabel = (status: string) => {
   return "Working on your request...";
 };
 
+const DEEP_RESEARCH_STATUS_FALLBACKS = [
+  "Mapping research angles...",
+  "Searching trusted sources...",
+  "Reading source material...",
+  "Comparing evidence...",
+  "Building the final report...",
+];
+
 const ChatPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -576,7 +584,10 @@ const ChatPage = () => {
         });
       },
       onStatus: (status) => {
-        const normalizedStatus = normalizeStatusLabel(status);
+        let normalizedStatus = normalizeStatusLabel(status);
+        if (isDeepResearch && normalizedStatus === "Working on your request...") {
+          normalizedStatus = DEEP_RESEARCH_STATUS_FALLBACKS[researchTasksRef.current.length % DEEP_RESEARCH_STATUS_FALLBACKS.length];
+        }
         if (normalizedStatus) {
           setSearchStatus(normalizedStatus);
           setIsThinking(true);
