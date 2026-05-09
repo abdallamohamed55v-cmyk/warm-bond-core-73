@@ -900,7 +900,23 @@ Ask me anything to get started!`;
             senderAvatar,
           }];
         });
-        setTimeout(() => scrollToBottom(), 100);
+        // Smart auto-scroll: only scroll if user is near bottom; else show "new messages" badge
+        const el = messagesContainerRef.current;
+        const nearBottom = el ? (el.scrollHeight - el.scrollTop - el.clientHeight) < 200 : true;
+        if (nearBottom) {
+          setTimeout(() => scrollToBottom(), 100);
+        } else if (newMsg.user_id !== chatUserId) {
+          setNewMessagesCount((c) => c + 1);
+        }
+        // Sound + title badge if from another user
+        if (newMsg.user_id && newMsg.user_id !== chatUserId) {
+          if (typeof document !== "undefined" && document.hidden) {
+            setUnreadCount((c) => c + 1);
+            playNotificationSound();
+          } else if (!nearBottom) {
+            playNotificationSound();
+          }
+        }
       })
       .subscribe();
 
