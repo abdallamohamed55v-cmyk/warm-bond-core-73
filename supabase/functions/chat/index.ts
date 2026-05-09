@@ -1709,6 +1709,115 @@ async function handleToolCalls(
         continue;
       }
 
+      // ── Megsy Internal: REMEMBER_FACT ──
+      if (toolName === "REMEMBER_FACT" && user_id) {
+        const fact = String(toolArgs.fact || "").trim();
+        const importance = Math.min(Math.max(Number(toolArgs.importance) || 3, 1), 5);
+        if (!fact) continue;
+        pushStatus("Saving to long-term memory...");
+        try {
+          await sb.from("user_memories").insert({ user_id, fact, importance, source: "agent" });
+          allSearchResults.push(`Memory saved successfully: "${fact}" (importance ${importance}).`);
+        } catch (e) {
+          console.error("REMEMBER_FACT error:", e);
+          allSearchResults.push(`Failed to save memory: ${(e as any)?.message || "unknown error"}.`);
+        }
+        continue;
+      }
+
+      // ── Megsy Internal: SEARCH_ATTACHMENTS ──
+      if (toolName === "SEARCH_ATTACHMENTS" && user_id) {
+        const query = String(toolArgs.query || "").trim();
+        const limit = Math.min(Math.max(Number(toolArgs.limit) || 5, 1), 10);
+        if (!query) continue;
+        pushStatus("Searching your attachments...");
+        try {
+          // Embed query via Lovable AI Gateway (text-embedding compatible)
+          const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
+          let embedding: number[] | null = null;
+          if (LOVABLE_KEY) {
+            const er = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/embeddings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_KEY}` },
+              body: JSON.stringify({ model: "google/text-embedding-004", input: query }),
+            }, 8000);
+            if (er.ok) {
+              const ej = await er.json();
+              embedding = ej?.data?.[0]?.embedding || null;
+            }
+          }
+          if (!embedding) {
+            // Fallback: keyword ILIKE search
+            const { data } = await sb.from("attachment_chunks")
+              .select("file_name, chunk_index, content")
+              .eq("user_id", user_id)
+              .ilike("content", `%${query}%`)
+              .limit(limit);
+            if (data && data.length > 0) {
+              allSearchResults.push(`Attachment search (keyword) for "${query}":\n` + data.map((d: any, i: number) => `[${i+1}] ${d.file_name} (chunk ${d.chunk_index}):\n${d.content}`).join("\n\n"));
+            } else {
+              allSearchResults.push(`No attachments matched "${query}".`);
+            }
+          } else {
+            const { data } = await sb.rpc("search_attachment_chunks", {
+              p_user_id: user_id,
+              p_conversation_id: conversation_id || null,
+              p_query_embedding: embedding,
+              p_match_count: limit,
+            });
+            if (data && data.length > 0) {
+              allSearchResults.push(`Attachment search for "${query}":\n` + data.map((d: any, i: number) => `[${i+1}] ${d.file_name} (chunk ${d.chunk_index}, sim ${d.similarity?.toFixed(2)}):\n${d.content}`).join("\n\n"));
+            } else {
+              allSearchResults.push(`No relevant attachments found for "${query}".`);
+            }
+          }
+        } catch (e) {
+          console.error("SEARCH_ATTACHMENTS error:", e);
+          allSearchResults.push(`Attachment search failed: ${(e as any)?.message || "unknown error"}.`);
+        }
+        continue;
+      }
+
+      // ── Megsy Internal: CODE_INTERPRETER (sandboxed JS via Deno Worker) ──
+      if (toolName === "CODE_INTERPRETER") {
+        const code = String(toolArgs.code || "").trim();
+        if (!code) continue;
+        pushStatus("Running code in sandbox...");
+        try {
+          const workerCode = `
+            const logs = [];
+            const console = { log: (...a) => logs.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')), error: (...a) => logs.push('ERROR: ' + a.map(x => String(x)).join(' ')) };
+            self.onmessage = async (e) => {
+              try {
+                const fn = new Function('console', 'return (async () => { ' + e.data + ' })();');
+                const result = await fn(console);
+                self.postMessage({ ok: true, logs, result: result === undefined ? null : (typeof result === 'object' ? JSON.stringify(result) : String(result)) });
+              } catch (err) {
+                self.postMessage({ ok: false, logs, error: String(err && err.message || err) });
+              }
+            };
+          `;
+          const blob = new Blob([workerCode], { type: "application/javascript" });
+          const worker = new Worker(URL.createObjectURL(blob), { type: "module", deno: { permissions: "none" } } as any);
+          const result: any = await new Promise((resolve) => {
+            const t = setTimeout(() => { worker.terminate(); resolve({ ok: false, error: "Execution timed out (5s)", logs: [] }); }, 5000);
+            worker.onmessage = (e) => { clearTimeout(t); worker.terminate(); resolve(e.data); };
+            worker.onerror = (e) => { clearTimeout(t); worker.terminate(); resolve({ ok: false, error: String(e.message || e), logs: [] }); };
+            worker.postMessage(code);
+          });
+          const out = [
+            result.ok ? "Code executed successfully." : `Code error: ${result.error}`,
+            (result.logs || []).length > 0 ? `stdout:\n${(result.logs || []).join("\n")}` : "",
+            result.result != null ? `result: ${result.result}` : "",
+          ].filter(Boolean).join("\n");
+          allSearchResults.push(`CODE_INTERPRETER output:\n${out}`);
+        } catch (e) {
+          console.error("CODE_INTERPRETER error:", e);
+          allSearchResults.push(`Code interpreter failed: ${(e as any)?.message || "unknown error"}.`);
+        }
+        continue;
+      }
+
       if (!COMPOSIO_API_KEY || !toolName) continue;
 
       pushStatus(`Executing ${toolName.split("_")[0]} action...`);
