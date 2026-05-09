@@ -83,8 +83,13 @@ const AppSidebar = ({ open, onClose, onNewChat, onSelectConversation, activeConv
   // Refresh on focus so newly created conversations show up.
   useEffect(() => {
     const onFocus = () => { if (showRecent) loadConversations(); };
+    const onConversationsChanged = () => { if (showRecent) loadConversations(); };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener("megsy:conversations-changed", onConversationsChanged);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("megsy:conversations-changed", onConversationsChanged);
+    };
   }, [currentMode, showRecent, currentUserId]);
 
   const loadUserInfo = async () => {
