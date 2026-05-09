@@ -275,6 +275,7 @@ function isToolMarkerChunk(content: string): boolean {
     "GENERATE_VIDEO",
     "GENERATE_VOICE",
     "CANVA_CREATE_SLIDES",
+    "FETCH_URL",
   ].includes(content.trim());
 }
 
@@ -392,7 +393,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier } = await req.json();
+    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier, activeSkill, availableSkills } = await req.json();
     const latestUserMessage = Array.isArray(messages)
       ? [...messages].reverse().find((message: any) => message?.role === "user")
       : null;
@@ -599,6 +600,14 @@ serve(async (req) => {
           name: "CODE_INTERPRETER",
           description: "Execute JavaScript code in a secure sandbox to perform calculations, data parsing, JSON/CSV transformation, regex, math, or quick algorithmic tasks. Returns stdout (anything you console.log) and the final expression value. No filesystem, no network.",
           parameters: { type: "object", properties: { code: { type: "string", description: "Self-contained JavaScript code. Use console.log() for output." } }, required: ["code"] },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "FETCH_URL",
+          description: "Fetch a specific URL the user provided (or referenced) and return its cleaned text content (title, description, main text). Use when the user asks you to read, summarize, or answer questions about a specific webpage. Lighter and faster than BROWSE_WEBSITE; do not use for interactive tasks (forms, logins, multi-step browsing).",
+          parameters: { type: "object", properties: { url: { type: "string", description: "Absolute URL to fetch (must start with http(s)://)." }, extract: { type: "string", enum: ["summary", "full", "metadata"], description: "summary = first ~3000 chars, full = ~6000 chars, metadata = title+description only. Default: summary." } }, required: ["url"] },
         },
       },
     ] : [];
