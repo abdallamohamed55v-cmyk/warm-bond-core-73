@@ -257,16 +257,17 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
   }, [content]);
 
   const handleSelectText = useCallback(() => {
-    const el = userBubbleRef.current;
-    if (!el) return;
-    const selection = window.getSelection();
-    if (!selection) return;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    toast.success("Text selected");
+    setSelectTextOpen(true);
   }, []);
+
+  const handleCopyAllText = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  }, [content]);
 
   const handleLongPressStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     if (role !== "user") return;
