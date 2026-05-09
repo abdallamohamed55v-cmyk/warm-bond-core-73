@@ -121,6 +121,7 @@ const SmartNotesPage = lazy(() => import("./pages/tools/SmartNotesPage"));
 const ExamSimulatorPage = lazy(() => import("./pages/tools/ExamSimulatorPage"));
 const StudyPlannerPage = lazy(() => import("./pages/tools/StudyPlannerPage"));
 const FocusRoomPage = lazy(() => import("./pages/tools/FocusRoomPage"));
+const SkillsSettingsPage = lazy(() => import("./pages/SkillsSettingsPage"));
 
 const queryClient = new QueryClient();
 
@@ -303,6 +304,7 @@ const App = () => {
                   <Route path="/settings/language" element={<ProtectedRoute><LanguagePage /></ProtectedRoute>} />
                   <Route path="/settings/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                   <Route path="/settings/memory" element={<ProtectedRoute><MemoryPage /></ProtectedRoute>} />
+                  <Route path="/settings/skills" element={<ProtectedRoute><SkillsSettingsPage /></ProtectedRoute>} />
                   <Route path="/settings/change-email" element={<ProtectedRoute><ChangeEmailPage /></ProtectedRoute>} />
                   <Route path="/settings/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
                   <Route path="/settings/delete-account" element={<ProtectedRoute><DeleteAccountPage /></ProtectedRoute>} />

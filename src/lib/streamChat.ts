@@ -22,6 +22,8 @@ export async function streamChat({
   computerUseEnabled,
   activeAgent,
   selectedModel,
+  activeSkill,
+  availableSkills,
   onDelta,
   onDone,
   onError,
@@ -43,6 +45,8 @@ export async function streamChat({
   computerUseEnabled?: boolean;
   activeAgent?: string;
   selectedModel?: { id: string; cost: number };
+  activeSkill?: { id?: string; name: string; instructions: string; enabled_tools?: string[]; preferred_model?: string | null } | null;
+  availableSkills?: Array<{ name: string; description: string }>;
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError?: (error: string) => void;
@@ -61,7 +65,7 @@ export async function streamChat({
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ messages, model, tier, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel }),
+      body: JSON.stringify({ messages, model, tier, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, activeSkill, availableSkills }),
       signal,
     });
 

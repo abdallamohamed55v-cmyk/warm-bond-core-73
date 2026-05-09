@@ -275,6 +275,7 @@ function isToolMarkerChunk(content: string): boolean {
     "GENERATE_VIDEO",
     "GENERATE_VOICE",
     "CANVA_CREATE_SLIDES",
+    "FETCH_URL",
   ].includes(content.trim());
 }
 
@@ -392,7 +393,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier } = await req.json();
+    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier, activeSkill, availableSkills } = await req.json();
     const latestUserMessage = Array.isArray(messages)
       ? [...messages].reverse().find((message: any) => message?.role === "user")
       : null;
@@ -601,6 +602,14 @@ serve(async (req) => {
           parameters: { type: "object", properties: { code: { type: "string", description: "Self-contained JavaScript code. Use console.log() for output." } }, required: ["code"] },
         },
       },
+      {
+        type: "function",
+        function: {
+          name: "FETCH_URL",
+          description: "Fetch a specific URL the user provided (or referenced) and return its cleaned text content (title, description, main text). Use when the user asks you to read, summarize, or answer questions about a specific webpage. Lighter and faster than BROWSE_WEBSITE; do not use for interactive tasks (forms, logins, multi-step browsing).",
+          parameters: { type: "object", properties: { url: { type: "string", description: "Absolute URL to fetch (must start with http(s)://)." }, extract: { type: "string", enum: ["summary", "full", "metadata"], description: "summary = first ~3000 chars, full = ~6000 chars, metadata = title+description only. Default: summary." } }, required: ["url"] },
+        },
+      },
     ] : [];
 
     const isCasualMessage = isCasualEarly;
@@ -736,7 +745,17 @@ CORE IDENTITY (NEVER VIOLATE):
       }
     }
 
-    // Build tools array selectively
+    // ── Skills (Megsy Skills system) ──
+    if (activeSkill && typeof activeSkill === "object" && activeSkill.instructions) {
+      const skillName = String(activeSkill.name || "Custom Skill");
+      systemPrompt += `\n\n<active_skill name="${skillName}">\n${String(activeSkill.instructions).slice(0, 4000)}\n</active_skill>\n- The user explicitly selected this skill. Apply its persona, tone, and methodology throughout the response. Do not name the skill aloud unless asked.`;
+    } else if (Array.isArray(availableSkills) && availableSkills.length > 0) {
+      const list = availableSkills
+        .slice(0, 12)
+        .map((s: any) => `- ${String(s.name || "").slice(0, 60)} — ${String(s.description || "").slice(0, 140)}`)
+        .join("\n");
+      systemPrompt += `\n\nAVAILABLE SKILLS (auto mode — silently apply when relevant, never name them):\n${list}\n- If the user's request clearly matches one skill, adopt its expertise/tone for this turn. If multiple match, combine. If none match, answer normally.`;
+    }
     const selectedTools: any[] = [];
     if (!isCasualMessage) {
       if (isShopping) selectedTools.push(...shoppingTools);
@@ -1909,6 +1928,64 @@ async function handleToolCalls(
         continue;
       }
 
+      // FETCH_URL — lightweight single-page reader (no API key required)
+      if (toolName === "FETCH_URL") {
+        const rawUrl = String(toolArgs.url || "").trim();
+        const extract = String(toolArgs.extract || "summary");
+        if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+          allSearchResults.push(`FETCH_URL: invalid URL "${rawUrl}".`);
+          continue;
+        }
+        pushStatus(`Reading ${rawUrl.replace(/^https?:\/\//, "").split("/")[0]}...`);
+        try {
+          const resp = await fetchWithTimeout(rawUrl, {
+            method: "GET",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; MegsyBot/1.0)",
+              "Accept": "text/html,application/xhtml+xml",
+            },
+          }, 12000);
+          if (!resp.ok) {
+            allSearchResults.push(`FETCH_URL ${rawUrl}: HTTP ${resp.status}.`);
+            continue;
+          }
+          const html = await resp.text();
+          const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+          const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)
+            || html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["']/i);
+          const title = (titleMatch?.[1] || "").trim();
+          const description = (descMatch?.[1] || "").trim();
+          let body = html
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+            .replace(/<!--[\s\S]*?-->/g, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, " ")
+            .trim();
+          const limit = extract === "metadata" ? 0 : (extract === "full" ? 6000 : 3000);
+          if (limit > 0 && body.length > limit) body = body.slice(0, limit) + "…";
+          const block = [
+            `FETCH_URL ${rawUrl}`,
+            title ? `Title: ${title}` : "",
+            description ? `Description: ${description}` : "",
+            extract === "metadata" ? "" : `Content:\n${body}`,
+          ].filter(Boolean).join("\n");
+          allSearchResults.push(block);
+          researchSourcesSet.add(rawUrl);
+        } catch (e) {
+          console.error("FETCH_URL error:", e);
+          allSearchResults.push(`FETCH_URL ${rawUrl}: failed to fetch (${(e as any)?.message || "unknown"}).`);
+        }
+        continue;
+      }
+
       // Internal tools that must never route into the Composio "Connect account" flow.
       // If we got here it means the relevant API key (Serper / Hyperbrowser / etc.) is
       // missing — emit a clean fallback message instead of asking the user to connect a
@@ -1916,7 +1993,7 @@ async function handleToolCalls(
       const INTERNAL_TOOLS = new Set([
         "WEB_SEARCH", "BROWSE_WEBSITE", "SHOPPING_SEARCH", "CONVERT_CURRENCY",
         "GENERATE_IMAGE", "GENERATE_VIDEO", "GENERATE_VOICE", "CANVA_CREATE_SLIDES",
-        "REMEMBER_FACT", "SEARCH_ATTACHMENTS", "CODE_INTERPRETER",
+        "REMEMBER_FACT", "SEARCH_ATTACHMENTS", "CODE_INTERPRETER", "FETCH_URL",
       ]);
       if (toolName && INTERNAL_TOOLS.has(toolName)) {
         if (toolName === "WEB_SEARCH" || toolName === "BROWSE_WEBSITE") {

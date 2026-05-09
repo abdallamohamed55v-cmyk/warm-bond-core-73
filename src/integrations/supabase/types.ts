@@ -1896,6 +1896,48 @@ export type Database = {
         }
         Relationships: []
       }
+      skills: {
+        Row: {
+          created_at: string
+          description: string
+          enabled_tools: string[]
+          icon: string | null
+          id: string
+          instructions: string
+          is_active: boolean
+          name: string
+          preferred_model: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          enabled_tools?: string[]
+          icon?: string | null
+          id?: string
+          instructions?: string
+          is_active?: boolean
+          name: string
+          preferred_model?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          enabled_tools?: string[]
+          icon?: string | null
+          id?: string
+          instructions?: string
+          is_active?: boolean
+          name?: string
+          preferred_model?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       slide_projects: {
         Row: {
           created_at: string
@@ -2286,6 +2328,45 @@ export type Database = {
           status?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      system_skills: {
+        Row: {
+          created_at: string
+          description: string
+          display_order: number
+          enabled_tools: string[]
+          icon: string | null
+          id: string
+          instructions: string
+          is_active: boolean
+          name: string
+          preferred_model: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          display_order?: number
+          enabled_tools?: string[]
+          icon?: string | null
+          id?: string
+          instructions?: string
+          is_active?: boolean
+          name: string
+          preferred_model?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          display_order?: number
+          enabled_tools?: string[]
+          icon?: string | null
+          id?: string
+          instructions?: string
+          is_active?: boolean
+          name?: string
+          preferred_model?: string | null
         }
         Relationships: []
       }

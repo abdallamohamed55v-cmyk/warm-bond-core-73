@@ -15,6 +15,9 @@ import FancyButton from "@/components/FancyButton";
 import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
+import { useActiveSkill, useSkills } from "@/hooks/useSkills";
+import SkillBadge from "@/components/SkillBadge";
+import SkillsPickerSheet from "@/components/chat/SkillsPickerSheet";
 import DeepResearchToggle from "@/components/research/DeepResearchToggle";
 import AnimatedHeadline from "@/components/research/AnimatedHeadline";
 import ClarifyDialog, { type ClarifyQuestion } from "@/components/research/ClarifyDialog";
@@ -122,6 +125,9 @@ const ChatPage = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationTitle, setConversationTitle] = useState("");
   const [searchEnabled, setSearchEnabled] = useState(true);
+  const { activeSkill, setActiveSkill } = useActiveSkill();
+  const { mySkills, librarySkills } = useSkills();
+  const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
   const [megsyTier, setMegsyTier] = useState<"lite" | "pro" | "max">(() => {
     if (typeof window === "undefined") return "lite";
     return (localStorage.getItem("megsy_tier") as any) || "lite";
@@ -573,6 +579,8 @@ const ChatPage = () => {
       computerUseEnabled,
       activeAgent: chatMode !== "normal" ? chatMode : (selectedAgent?.id || undefined),
       selectedModel: selectedModel ? { id: selectedModel.id, cost: selectedModel.cost } : undefined,
+      activeSkill: activeSkill ? { id: activeSkill.id, name: activeSkill.name, instructions: activeSkill.instructions, enabled_tools: activeSkill.enabled_tools, preferred_model: activeSkill.preferred_model } : undefined,
+      availableSkills: !activeSkill ? [...mySkills, ...librarySkills.filter((l) => !mySkills.some((m) => m.name === l.name))].slice(0, 12).map((s) => ({ name: s.name, description: s.description })) : undefined,
       onDelta: updateAssistant,
       onImages: (imgs) => {searchImages = imgs;},
       onProducts: (products) => {
