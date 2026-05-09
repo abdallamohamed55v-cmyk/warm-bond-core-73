@@ -13,6 +13,7 @@ import DeepResearchCard from "./chat/DeepResearchCard";
 import ResearchTaskTimeline, { type ResearchTask } from "./research/ResearchTaskTimeline";
 import ResearchPlanCard, { type ResearchPlan } from "./research/ResearchPlanCard";
 import ResearchSummaryCard, { type ResearchSummary } from "./research/ResearchSummaryCard";
+import { detectLang, langDir } from "@/lib/detectLang";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
@@ -507,12 +508,16 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               ))}
             </div>
           )}
+          {(() => { const l = detectLang(content); return (
           <div
-            className="px-4 py-2.5 rounded-3xl rounded-bl-lg text-[0.9375rem] leading-relaxed select-text"
+            dir={langDir(l)}
+            lang={l === "ar" ? "ar" : l === "en" ? "en" : undefined}
+            className={`px-4 py-2.5 rounded-3xl rounded-bl-lg text-[0.9375rem] leading-relaxed select-text user-bubble lang-${l}`}
             style={bubbleColor ? { background: bubbleColor.bg, color: bubbleColor.text } : { background: "hsl(var(--muted))", color: "hsl(var(--foreground))" }}
           >
             {content}
           </div>
+          ); })()}
         </div>
       </div>
     );
@@ -551,8 +556,11 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               ))}
             </div>
           )}
+          {(() => { const l = detectLang(content); return (
           <div
             ref={userBubbleRef}
+            dir={langDir(l)}
+            lang={l === "ar" ? "ar" : l === "en" ? "en" : undefined}
             onContextMenu={handleContextMenu}
             onTouchStart={handleLongPressStart}
             onTouchEnd={clearLongPress}
@@ -561,10 +569,11 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               background: "var(--user-bubble, #2563eb)",
               color: "var(--user-bubble-text, #ffffff)",
             }}
-            className="px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text whitespace-pre-wrap break-words"
+            className={`px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text whitespace-pre-wrap break-words user-bubble lang-${l}`}
           >
             {renderTextWithMentions(content)}
           </div>
+          ); })()}
           <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align={isOtherMember ? "left" : "right"} />
           {showReaders && <ReadersRow readers={readers || []} align={isOtherMember ? "left" : "right"} />}
 
@@ -703,21 +712,23 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
                 if (block.type === "questions") {
                   return null;
                 }
+                const blockText = typeof block.data === "string" ? block.data : JSON.stringify(block.data);
+                const bl = detectLang(blockText);
                 return (
-                  <div key={idx} className="prose-chat text-foreground">
-                    <MarkdownRenderer content={typeof block.data === "string" ? block.data : JSON.stringify(block.data)} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
+                  <div key={idx} dir={langDir(bl)} lang={bl === "ar" ? "ar" : bl === "en" ? "en" : undefined} className={`prose-chat text-foreground lang-${bl}`}>
+                    <MarkdownRenderer content={blockText} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="prose-chat text-foreground">
+          ) : (() => { const al = detectLang(content); return (
+            <div dir={langDir(al)} lang={al === "ar" ? "ar" : al === "en" ? "en" : undefined} className={`prose-chat text-foreground lang-${al}`}>
               <MarkdownRenderer content={content} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
               {isStreaming && (
                 <span className="inline-block w-1.5 h-4 bg-foreground/60 animate-pulse ml-0.5 align-middle" />
               )}
             </div>
-          )}
+          ); })()}
 
           {/* Sources — hidden for deep research */}
           {!isStreaming && !isDeepResearch && uniqueLinks.length > 0 && (

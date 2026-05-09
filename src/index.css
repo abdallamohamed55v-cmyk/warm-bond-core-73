@@ -495,6 +495,76 @@ input, textarea, select {
 .prose-chat tr:last-child td { border-bottom: none; }
 .prose-chat tr:nth-child(even) td { background: hsl(var(--secondary) / 0.3); }
 
+/* ============================================================
+   Per-language typography for chat messages
+   - lang-ar  : Arabic (RTL, Arabic web font, slightly taller line)
+   - lang-en  : English (LTR, Inter, tight clean rhythm)
+   - lang-other : CJK / Cyrillic / etc. (LTR, system fallback stack)
+   Applied to both .prose-chat (assistant) and .user-bubble (user input).
+   ============================================================ */
+
+/* Arabic */
+.prose-chat.lang-ar,
+.user-bubble.lang-ar {
+  font-family: "Noto Naskh Arabic", "Tajawal", "Cairo", "Amiri", system-ui, sans-serif;
+  line-height: 1.95;
+  letter-spacing: 0;
+  text-align: start;
+  word-spacing: 0.02em;
+}
+.prose-chat.lang-ar { font-size: 1.0625rem; }
+.prose-chat.lang-ar p { margin-bottom: 0.85em; }
+.prose-chat.lang-ar ul,
+.prose-chat.lang-ar ol { padding-left: 0; padding-right: 1.6em; }
+.prose-chat.lang-ar li { margin-bottom: 0.4em; }
+.prose-chat.lang-ar h1 { font-size: 1.55em; line-height: 1.4; }
+.prose-chat.lang-ar h2 { font-size: 1.3em; line-height: 1.45; }
+.prose-chat.lang-ar h3 { font-size: 1.1em; line-height: 1.5; }
+.prose-chat.lang-ar blockquote {
+  border-left: none;
+  border-right: 3px solid hsl(var(--primary));
+  padding-left: 0;
+  padding-right: 1em;
+}
+.prose-chat.lang-ar th,
+.prose-chat.lang-ar td { text-align: right; }
+/* Numbers & inline code stay LTR inside RTL flow */
+.prose-chat.lang-ar code,
+.user-bubble.lang-ar code { unicode-bidi: isolate; direction: ltr; display: inline-block; }
+
+/* English */
+.prose-chat.lang-en,
+.user-bubble.lang-en {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  line-height: 1.7;
+  letter-spacing: -0.005em;
+  text-align: left;
+}
+.prose-chat.lang-en { font-size: 1rem; }
+.prose-chat.lang-en h1 { font-size: 1.5em; letter-spacing: -0.018em; }
+.prose-chat.lang-en h2 { font-size: 1.25em; letter-spacing: -0.014em; }
+.prose-chat.lang-en h3 { font-size: 1.1em; letter-spacing: -0.01em; }
+
+/* Other languages (CJK, Cyrillic, Indic, …) */
+.prose-chat.lang-other,
+.user-bubble.lang-other {
+  font-family: "PingFang SC", "Hiragino Sans", "Microsoft YaHei",
+               "Noto Sans CJK SC", "Noto Sans", -apple-system,
+               BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  line-height: 1.85;
+  letter-spacing: 0;
+  text-align: start;
+}
+.prose-chat.lang-other { font-size: 1.0625rem; }
+.prose-chat.lang-other p { margin-bottom: 0.8em; }
+
+/* User bubbles — keep them tight but inherit direction */
+.user-bubble { unicode-bidi: plaintext; }
+.user-bubble.lang-ar { line-height: 1.85; }
+.user-bubble.lang-en { line-height: 1.55; }
+.user-bubble.lang-other { line-height: 1.7; }
+
+
 /* Slow pulse animation for loading button */
 @keyframes slow-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
