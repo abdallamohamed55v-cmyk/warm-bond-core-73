@@ -892,7 +892,9 @@ Ask me anything to get started!`;
       })
       .subscribe();
 
-    const presence = supabase.channel(`presence-${conversationId}`, { config: { broadcast: { self: false } } });
+    const presence = supabase.channel(`presence-${conversationId}`, {
+      config: { broadcast: { self: false }, presence: { key: chatUserId } },
+    });
     presence
       .on("broadcast", { event: "typing" }, ({ payload }: any) => {
         if (!payload?.user_id || payload.user_id === chatUserId) return;
@@ -911,13 +913,22 @@ Ask me anything to get started!`;
         if (!payload || payload.user_id === chatUserId) return;
         setRemoteAiBusy(payload.busy ? { name: payload.name || "Someone" } : null);
       })
-      .subscribe();
+      .on("presence", { event: "sync" }, () => {
+        const state = presence.presenceState() as Record<string, any>;
+        setOnlineUsers(new Set(Object.keys(state)));
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presence.track({ user_id: chatUserId, online_at: new Date().toISOString() });
+        }
+      });
     presenceChannelRef.current = presence;
 
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(presence);
       presenceChannelRef.current = null;
+      setOnlineUsers(new Set());
     };
   }, [conversationId, chatUserId]);
 
