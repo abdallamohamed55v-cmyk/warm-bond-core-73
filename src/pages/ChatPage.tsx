@@ -1710,17 +1710,28 @@ Ask me anything to get started!`;
         {/* Bottom input - floating with blur */}
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 md:px-6 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 pointer-events-none">
             <div className="max-w-3xl mx-auto space-y-2 pointer-events-auto">
-              {/* Deep Research quick toggle */}
-              <div className="flex items-center gap-2">
-                <DeepResearchToggle
-                  active={chatMode === "deep-research"}
-                  onToggle={() => {
-                    setChatMode((prev) => prev === "deep-research" ? "normal" : "deep-research");
-                    setSearchEnabled(true);
-                    setPlusMenuOpen(false);
-                  }}
-                />
-              </div>
+              {/* Deep Research quick toggle - hidden when active (mode badge takes over) */}
+              <AnimatePresence initial={false}>
+                {chatMode !== "deep-research" && (
+                  <motion.div
+                    key="dr-toggle"
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex items-center gap-2 overflow-hidden"
+                  >
+                    <DeepResearchToggle
+                      active={false}
+                      onToggle={() => {
+                        setChatMode("deep-research");
+                        setSearchEnabled(true);
+                        setPlusMenuOpen(false);
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
               {/* Mode badge above input */}
               <AnimatePresence>
                 {chatMode !== "normal" && (
