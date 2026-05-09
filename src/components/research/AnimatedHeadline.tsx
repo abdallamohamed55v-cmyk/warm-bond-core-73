@@ -12,9 +12,9 @@ const container = {
   exit: { transition: { staggerChildren: 0.015, staggerDirection: -1 } },
 };
 
-const letter = {
+const letter: Variants = {
   hidden: { opacity: 0, y: 14, filter: "blur(8px)" },
-  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { type: "spring", stiffness: 380, damping: 26 } },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { type: "spring" as const, stiffness: 380, damping: 26 } },
   exit: { opacity: 0, y: -10, filter: "blur(8px)", transition: { duration: 0.18 } },
 };
 
