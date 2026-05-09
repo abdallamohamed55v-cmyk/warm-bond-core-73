@@ -140,9 +140,21 @@ const ChatPage = () => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [systemEvents, setSystemEvents] = useState<{ id: string; text: string; at: number }[]>([]);
+  // Read receipts: messageId -> array of readers
+  const [messageReads, setMessageReads] = useState<Record<string, { user_id: string; name?: string; avatar?: string }[]>>({});
+  // Reactions: messageId -> array of {emoji, users}
+  const [messageReactions, setMessageReactions] = useState<Record<string, { id: string; emoji: string; user_id: string }[]>>({});
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  // Mentions
+  const [mentionQuery, setMentionQuery] = useState<{ q: string; start: number } | null>(null);
+  // Unread tracking for sound + title
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const originalTitleRef = useRef<string>("");
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
+  const markedReadRef = useRef<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState<AgentModel | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [userName, setUserName] = useState<string>("");
