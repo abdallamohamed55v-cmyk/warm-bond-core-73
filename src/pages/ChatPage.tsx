@@ -1447,7 +1447,7 @@ Ask me anything to get started!`;
                 <PegtopIcon className="relative w-9 h-9 md:w-10 md:h-10 text-blue-500 drop-shadow-[0_0_18px_rgba(59,130,246,0.7)]" />
                 <h1 className="relative text-[28px] md:text-[36px] leading-none tracking-tight font-extrabold text-foreground">
                   Create{" "}
-                  <Highlighter action="underline" color="#3B82F6" strokeWidth={2.5}>
+                  <Highlighter action="underline" color="#3B82F6" strokeWidth={2.5} animationDuration={1400}>
                     <span className="text-blue-500">something</span>
                   </Highlighter>
                 </h1>
