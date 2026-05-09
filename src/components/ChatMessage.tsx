@@ -426,7 +426,7 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
                       { icon: Copy, label: "Copy", action: async () => { await handleCopy(); closeMenu(); } },
                       { icon: Pencil, label: "Edit message", action: () => { handleEditAction(); closeMenu(); } },
                       { icon: Type, label: "Select text", action: () => { handleSelectText(); closeMenu(); } },
-                      { icon: Share2, label: "Share", action: async () => { await handleUserShare(); closeMenu(); } },
+                      
                     ].map(({ icon: Icon, label, action }, i) => (
                       <button
                         key={label}
