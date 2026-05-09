@@ -639,7 +639,12 @@ const ChatPage = () => {
     toast.success("Renamed");
   };
 
-  const handleTogglePin = async () => {
+  const [confirmPinOpen, setConfirmPinOpen] = useState(false);
+  const handleTogglePin = () => {
+    if (!conversationId) return;
+    setConfirmPinOpen(true);
+  };
+  const performTogglePin = async () => {
     if (!conversationId) return;
     const nextPinned = !isPinned;
     const payload = nextPinned
@@ -648,6 +653,7 @@ const ChatPage = () => {
     const { error } = await supabase.from("conversations").update(payload as any).eq("id", conversationId);
     if (error) { toast.error("Failed to update pin"); return; }
     setIsPinned(nextPinned);
+    setConfirmPinOpen(false);
     toast.success(nextPinned ? "Pinned" : "Unpinned");
   };
 
