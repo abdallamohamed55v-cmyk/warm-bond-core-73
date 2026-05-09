@@ -749,6 +749,9 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               )}
             </div>
           )}
+          {!isStreaming && content && (
+            <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align="left" />
+          )}
         </>
       )}
 
