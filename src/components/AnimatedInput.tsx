@@ -72,51 +72,18 @@ const AnimatedInput = ({ value, onChange, onSend, onCancel, onPlusClick, disable
     return agent?.models || [];
   }, [activeAgent, lastSelectedAgent]);
 
-  // Placeholder typing animation
+  // Static placeholder that quietly rotates every few seconds (no per-char typing,
+  // which previously caused 20fps re-renders and a "reloading" feel while typing/streaming).
   useEffect(() => {
-    if (placeholderIntervalRef.current) clearInterval(placeholderIntervalRef.current);
-    if (placeholderTimeoutRef.current) clearTimeout(placeholderTimeoutRef.current);
-
-    if (valueRef.current) {
-      setDisplayedPlaceholder("");
-      return;
-    }
-
-    const target = items[placeholderIndex] || DEFAULT_PLACEHOLDERS[0];
-    let charIndex = 0;
-    setDisplayedPlaceholder("");
-
-    placeholderIntervalRef.current = setInterval(() => {
-      if (valueRef.current) {
-        if (placeholderIntervalRef.current) clearInterval(placeholderIntervalRef.current);
-        setDisplayedPlaceholder("");
-        return;
-      }
-      if (charIndex < target.length) {
-        setDisplayedPlaceholder(target.slice(0, charIndex + 1));
-        charIndex += 1;
-      } else {
-        if (placeholderIntervalRef.current) clearInterval(placeholderIntervalRef.current);
-        placeholderTimeoutRef.current = setTimeout(() => {
-          setPlaceholderIndex((prev) => (prev + 1) % items.length);
-        }, 2500);
-      }
-    }, 50);
-
-    return () => {
-      if (placeholderIntervalRef.current) clearInterval(placeholderIntervalRef.current);
-      if (placeholderTimeoutRef.current) clearTimeout(placeholderTimeoutRef.current);
-    };
+    setDisplayedPlaceholder(items[placeholderIndex] || DEFAULT_PLACEHOLDERS[0]);
   }, [placeholderIndex, items]);
 
   useEffect(() => {
-    if (value) {
-      setDisplayedPlaceholder("");
-      if (placeholderIntervalRef.current) clearInterval(placeholderIntervalRef.current);
-      if (placeholderTimeoutRef.current) clearTimeout(placeholderTimeoutRef.current);
-    } else if (!value && !placeholderIntervalRef.current) {
+    if (value) return; // pause rotation while user is typing
+    const id = setInterval(() => {
       setPlaceholderIndex((prev) => (prev + 1) % items.length);
-    }
+    }, 5000);
+    return () => clearInterval(id);
   }, [value, items]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

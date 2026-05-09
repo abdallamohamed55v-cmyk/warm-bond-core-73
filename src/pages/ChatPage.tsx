@@ -16,7 +16,7 @@ import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
 import { useActiveSkill, useSkills } from "@/hooks/useSkills";
-import SkillBadge from "@/components/SkillBadge";
+
 import SkillsPickerSheet from "@/components/chat/SkillsPickerSheet";
 import DeepResearchToggle from "@/components/research/DeepResearchToggle";
 import AnimatedHeadline from "@/components/research/AnimatedHeadline";
@@ -1445,6 +1445,21 @@ Ask me anything to get started!`;
                 <span className="flex-1 text-[13.5px] text-foreground/85">Use tools</span>
                 <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
               </motion.button>
+
+              {/* Skills row */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={iosSpring}
+                onClick={() => { setPlusMenuOpen(false); setSkillsPickerOpen(true); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
+              >
+                <Sparkles className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <span className="flex-1 text-[13.5px] text-foreground/85">Skills</span>
+                <span className="text-[12px] font-medium text-foreground/70 truncate max-w-[8rem]">
+                  {activeSkill ? activeSkill.name : "Auto"}
+                </span>
+                <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
+              </motion.button>
             </motion.div>
           ) : plusView === "models" ? (
             <motion.div
@@ -2037,6 +2052,13 @@ Ask me anything to get started!`;
         <input ref={imageInputRef} type="file" className="hidden" onChange={handleImageUpload} accept="image/*" multiple />
 
         <ConnectorsDialog open={connectorsOpen} onOpenChange={setConnectorsOpen} onNavigateIntegrations={() => navigate("/settings/integrations")} />
+
+        <SkillsPickerSheet
+          open={skillsPickerOpen}
+          onClose={() => setSkillsPickerOpen(false)}
+          activeSkill={activeSkill}
+          onSelect={(s) => setActiveSkill(s)}
+        />
 
         {/* Share Dialog - Glass */}
         <Dialog open={shareDialogOpen} onOpenChange={(open) => {setShareDialogOpen(open);if (!open) setGeneratedShareUrl(null);}}>
