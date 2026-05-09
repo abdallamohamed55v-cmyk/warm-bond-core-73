@@ -383,7 +383,15 @@ const ChatPage = () => {
       attachedImages: imageAttachments.map((f) => f.data),
       attachedFiles: fileAttachments.map((f) => ({ name: f.name, type: f.type }))
     };
-    setMessages((prev) => [...prev, userMsg, { role: "assistant", content: "" }]);
+    setMessages((prev) => {
+      let base = prev;
+      if (editingIndex !== null && prev[editingIndex]?.role === "user") {
+        base = [...prev];
+        base.splice(editingIndex, base[editingIndex + 1]?.role === "assistant" ? 2 : 1);
+      }
+      return [...base, userMsg, { role: "assistant", content: "" }];
+    });
+    if (editingIndex !== null) { setEditingIndex(null); setEditingOriginal(""); }
     const userInput = text;
     setInput("");
     const currentFiles = [...attachedFiles];
@@ -1144,14 +1152,22 @@ Ask me anything to get started!`;
     handleNewChat();
   };
 
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingOriginal, setEditingOriginal] = useState<string>("");
   const handleEditUserMessageAt = useCallback((index: number, messageText: string) => {
+    setEditingIndex(index);
+    setEditingOriginal(messageText);
     setInput(messageText);
-    setMessages((prev) => {
-      const next = [...prev];
-      if (!next[index] || next[index].role !== "user") return prev;
-      next.splice(index, next[index + 1]?.role === "assistant" ? 2 : 1);
-      return next;
-    });
+    // Focus textarea on next tick
+    setTimeout(() => {
+      const ta = document.querySelector<HTMLTextAreaElement>('textarea');
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }, 50);
+  }, []);
+  const cancelEdit = useCallback(() => {
+    setEditingIndex(null);
+    setEditingOriginal("");
+    setInput("");
   }, []);
 
   const hasConversation = messages.length > 0;
@@ -1672,6 +1688,16 @@ Ask me anything to get started!`;
                         );
                       })}
                   </motion.div>
+                )}
+                {editingIndex !== null && (
+                  <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-2xl liquid-glass border border-border/30">
+                    <Pencil className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="text-[12px] text-foreground/80 flex-1 truncate">Editing message</span>
+                    <button
+                      onClick={cancelEdit}
+                      className="text-[11px] font-medium text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md hover:bg-accent/40 transition-colors"
+                    >Cancel</button>
+                  </div>
                 )}
                 <AnimatedInput
                   value={input}
