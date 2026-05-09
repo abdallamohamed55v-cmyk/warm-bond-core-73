@@ -283,6 +283,7 @@ const ChatPage = () => {
     } else {
       setMembers([]);
     }
+    setLoadingMessages(false);
   };
 
   const handleCancel = () => {
