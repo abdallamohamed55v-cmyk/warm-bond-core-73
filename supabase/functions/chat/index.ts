@@ -832,6 +832,29 @@ CORE IDENTITY (NEVER VIOLATE):
         }
       }
 
+      // If Lovable fails with auth/rate/credits/server errors, fallback to OpenRouter then LemonData
+      if (provider === "lovable" && (failStatus === 401 || failStatus === 403 || failStatus === 429 || failStatus === 402 || failStatus >= 500)) {
+        const orK = getOpenRouterKey();
+        if (orK) {
+          apiUrl = OPENROUTER_URL;
+          apiKey = orK;
+          provider = "openrouter";
+          body.model = normalizeModelForProvider(modelId, provider);
+          retryCount++;
+          continue;
+        }
+        const lemonKey = await getLemonDataKey(sb);
+        if (lemonKey) {
+          apiUrl = LEMONDATA_URL;
+          apiKey = lemonKey.api_key;
+          usedKeyId = lemonKey.id;
+          provider = "lemondata";
+          body.model = normalizeModelForProvider(modelId, provider);
+          retryCount++;
+          continue;
+        }
+      }
+
       // If OpenRouter fails with auth/rate/server errors, fallback to LemonData
       if (provider === "openrouter" && (failStatus === 401 || failStatus === 403 || failStatus === 429 || failStatus === 402 || failStatus >= 500)) {
         const lemonKey = await getLemonDataKey(sb);
