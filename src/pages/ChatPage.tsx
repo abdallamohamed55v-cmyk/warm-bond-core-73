@@ -1500,17 +1500,20 @@ Ask me anything to get started!`;
           )}
 
           <AnimatePresence>
-            {showScrollBtn && messages.length > 0 && (
+            {(showScrollBtn || newMessagesCount > 0) && messages.length > 0 && (
               <motion.button
                 initial={{ opacity: 0, y: 8, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.9 }}
                 transition={{ type: "spring", stiffness: 320, damping: 24 }}
                 onClick={scrollToBottom}
-                className="fixed bottom-40 left-1/2 -translate-x-1/2 z-20 w-8 h-8 rounded-full liquid-glass flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+                className={`fixed bottom-40 left-1/2 -translate-x-1/2 z-20 ${newMessagesCount > 0 ? "px-3 h-8 gap-1.5 bg-primary text-primary-foreground" : "w-8 h-8 liquid-glass text-foreground/70 hover:text-foreground"} rounded-full flex items-center justify-center transition-colors shadow-lg`}
                 aria-label="Scroll to bottom"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
+                {newMessagesCount > 0 && (
+                  <span className="text-xs font-semibold">{newMessagesCount} new</span>
+                )}
               </motion.button>
             )}
           </AnimatePresence>
