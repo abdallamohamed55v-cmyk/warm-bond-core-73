@@ -1304,6 +1304,43 @@ Ask me anything to get started!`;
                 </div>
               </motion.button>
 
+              {/* Megsy tier picker */}
+              <div className="px-3 py-2.5 rounded-2xl bg-foreground/[0.03] border border-foreground/5">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Megsy v1 Model</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([
+                    { id: "lite" as const, label: "Lite", desc: "سريع", locked: false },
+                    { id: "pro" as const, label: "Pro", desc: "ذكي", locked: userPlan === "free" || userPlan === "trial" },
+                    { id: "max" as const, label: "Max", desc: "1T+", locked: userPlan === "free" || userPlan === "trial" },
+                  ]).map(t => (
+                    <motion.button
+                      key={t.id}
+                      whileTap={{ scale: 0.96 }}
+                      transition={iosSpring}
+                      onClick={() => {
+                        if (t.locked) {
+                          toast.info("Megsy " + t.label + " متاح للخطط المدفوعة فقط");
+                          return;
+                        }
+                        setMegsyTier(t.id);
+                        localStorage.setItem("megsy_tier", t.id);
+                        // Persist preference
+                        if (chatUserId) {
+                          supabase.from("ai_personalization").upsert({ user_id: chatUserId, preferred_tier: t.id } as any, { onConflict: "user_id" }).then(() => {});
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl transition-colors ${megsyTier === t.id ? "bg-primary text-primary-foreground" : "bg-foreground/[0.04] text-foreground/80 hover:bg-foreground/[0.08]"}`}
+                    >
+                      <span className="text-[12.5px] font-semibold flex items-center gap-1">
+                        {t.label}
+                        {t.locked && <span className="text-[9px] opacity-70">🔒</span>}
+                      </span>
+                      <span className="text-[9.5px] opacity-70">{t.desc}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
               {/* Tools row */}
               <motion.button
                 whileTap={{ scale: 0.97 }}
