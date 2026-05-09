@@ -1928,6 +1928,64 @@ async function handleToolCalls(
         continue;
       }
 
+      // FETCH_URL — lightweight single-page reader (no API key required)
+      if (toolName === "FETCH_URL") {
+        const rawUrl = String(toolArgs.url || "").trim();
+        const extract = String(toolArgs.extract || "summary");
+        if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+          allSearchResults.push(`FETCH_URL: invalid URL "${rawUrl}".`);
+          continue;
+        }
+        pushStatus(`Reading ${rawUrl.replace(/^https?:\/\//, "").split("/")[0]}...`);
+        try {
+          const resp = await fetchWithTimeout(rawUrl, {
+            method: "GET",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; MegsyBot/1.0)",
+              "Accept": "text/html,application/xhtml+xml",
+            },
+          }, 12000);
+          if (!resp.ok) {
+            allSearchResults.push(`FETCH_URL ${rawUrl}: HTTP ${resp.status}.`);
+            continue;
+          }
+          const html = await resp.text();
+          const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+          const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)
+            || html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["']/i);
+          const title = (titleMatch?.[1] || "").trim();
+          const description = (descMatch?.[1] || "").trim();
+          let body = html
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+            .replace(/<!--[\s\S]*?-->/g, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, " ")
+            .trim();
+          const limit = extract === "metadata" ? 0 : (extract === "full" ? 6000 : 3000);
+          if (limit > 0 && body.length > limit) body = body.slice(0, limit) + "…";
+          const block = [
+            `FETCH_URL ${rawUrl}`,
+            title ? `Title: ${title}` : "",
+            description ? `Description: ${description}` : "",
+            extract === "metadata" ? "" : `Content:\n${body}`,
+          ].filter(Boolean).join("\n");
+          allSearchResults.push(block);
+          researchSourcesSet.add(rawUrl);
+        } catch (e) {
+          console.error("FETCH_URL error:", e);
+          allSearchResults.push(`FETCH_URL ${rawUrl}: failed to fetch (${(e as any)?.message || "unknown"}).`);
+        }
+        continue;
+      }
+
       // Internal tools that must never route into the Composio "Connect account" flow.
       // If we got here it means the relevant API key (Serper / Hyperbrowser / etc.) is
       // missing — emit a clean fallback message instead of asking the user to connect a
@@ -1935,7 +1993,7 @@ async function handleToolCalls(
       const INTERNAL_TOOLS = new Set([
         "WEB_SEARCH", "BROWSE_WEBSITE", "SHOPPING_SEARCH", "CONVERT_CURRENCY",
         "GENERATE_IMAGE", "GENERATE_VIDEO", "GENERATE_VOICE", "CANVA_CREATE_SLIDES",
-        "REMEMBER_FACT", "SEARCH_ATTACHMENTS", "CODE_INTERPRETER",
+        "REMEMBER_FACT", "SEARCH_ATTACHMENTS", "CODE_INTERPRETER", "FETCH_URL",
       ]);
       if (toolName && INTERNAL_TOOLS.has(toolName)) {
         if (toolName === "WEB_SEARCH" || toolName === "BROWSE_WEBSITE") {
