@@ -639,7 +639,12 @@ const ChatPage = () => {
     toast.success("Renamed");
   };
 
-  const handleTogglePin = async () => {
+  const [confirmPinOpen, setConfirmPinOpen] = useState(false);
+  const handleTogglePin = () => {
+    if (!conversationId) return;
+    setConfirmPinOpen(true);
+  };
+  const performTogglePin = async () => {
     if (!conversationId) return;
     const nextPinned = !isPinned;
     const payload = nextPinned
@@ -648,6 +653,7 @@ const ChatPage = () => {
     const { error } = await supabase.from("conversations").update(payload as any).eq("id", conversationId);
     if (error) { toast.error("Failed to update pin"); return; }
     setIsPinned(nextPinned);
+    setConfirmPinOpen(false);
     toast.success(nextPinned ? "Pinned" : "Unpinned");
   };
 
@@ -1789,6 +1795,29 @@ Ask me anything to get started!`;
             <div className="flex justify-end gap-2 px-5 pb-5 border-t border-border/30 pt-4">
               <button onClick={() => setIsRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-black/70 hover:text-black liquid-glass-hover transition-colors">Cancel</button>
               <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-semibold bg-black text-white hover:opacity-90 transition-opacity">Save</button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirm Pin/Unpin Dialog */}
+        <Dialog open={confirmPinOpen} onOpenChange={setConfirmPinOpen}>
+          <DialogContent className={`${glassDialogClass} sm:max-w-sm`}>
+            <div className="p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0">
+                  <Pin className="w-5 h-5 text-primary" strokeWidth={2} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <DialogTitle className="text-base font-semibold text-foreground">{isPinned ? "Unpin this chat?" : "Pin this chat?"}</DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-1">
+                    {isPinned ? "It will be removed from the top of your list." : "It will appear at the top of your conversations."}
+                  </DialogDescription>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setConfirmPinOpen(false)} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors">Cancel</button>
+                <button onClick={performTogglePin} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-opacity">{isPinned ? "Unpin" : "Pin"}</button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
