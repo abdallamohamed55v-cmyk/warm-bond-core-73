@@ -1445,6 +1445,21 @@ Ask me anything to get started!`;
                 <span className="flex-1 text-[13.5px] text-foreground/85">Use tools</span>
                 <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
               </motion.button>
+
+              {/* Skills row */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                transition={iosSpring}
+                onClick={() => { setPlusMenuOpen(false); setSkillsPickerOpen(true); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl liquid-glass-hover transition-colors text-left"
+              >
+                <Sparkles className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
+                <span className="flex-1 text-[13.5px] text-foreground/85">Skills</span>
+                <span className="text-[12px] font-medium text-foreground/70 truncate max-w-[8rem]">
+                  {activeSkill ? activeSkill.name : "Auto"}
+                </span>
+                <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
+              </motion.button>
             </motion.div>
           ) : plusView === "models" ? (
             <motion.div
