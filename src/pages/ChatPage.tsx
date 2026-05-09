@@ -137,6 +137,9 @@ const ChatPage = () => {
   const [chatUserId, setChatUserId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<{ id: string; name: string; avatar: string | null }[]>([]);
   const [remoteAiBusy, setRemoteAiBusy] = useState<{ name: string } | null>(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [systemEvents, setSystemEvents] = useState<{ id: string; text: string; at: number }[]>([]);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
@@ -227,6 +230,9 @@ const ChatPage = () => {
     setConversationId(id);
     setSearchStatus("");
     setPendingQuestions([]);
+    setLoadingMessages(true);
+    setMessages([]);
+    setSystemEvents([]);
     const { data: conv } = await supabase.from("conversations").select("title, is_shared, share_id, is_pinned, mode, user_id").eq("id", id).single();
     if (conv) {
       setConversationTitle(conv.title || "Untitled");
@@ -277,6 +283,7 @@ const ChatPage = () => {
     } else {
       setMembers([]);
     }
+    setLoadingMessages(false);
   };
 
   const handleCancel = () => {
@@ -830,14 +837,23 @@ Ask me anything to get started!`;
         const m = payload.new as any;
         const enriched = await enrichMember(m.user_id, m.role);
         setMembers((prev) => prev.some((x) => x.id === m.user_id) ? prev : [...prev, enriched]);
-        toast.success(`${enriched.name || "Someone"} joined`);
+        if (m.user_id !== chatUserId) {
+          setSystemEvents((prev) => [...prev, { id: `j-${m.user_id}-${Date.now()}`, text: `${enriched.name || "Someone"} joined the conversation`, at: Date.now() }]);
+        }
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
         const old = payload.old as any;
-        setMembers((prev) => prev.filter((m) => m.id !== old.user_id));
+        let leftName = "Someone";
+        setMembers((prev) => {
+          const found = prev.find((m) => m.id === old.user_id);
+          if (found?.name) leftName = found.name;
+          return prev.filter((m) => m.id !== old.user_id);
+        });
         if (old.user_id === chatUserId) {
           toast.error("You were removed from this chat");
           handleNewChat();
+        } else {
+          setSystemEvents((prev) => [...prev, { id: `l-${old.user_id}-${Date.now()}`, text: `${leftName} left the conversation`, at: Date.now() }]);
         }
       })
       .subscribe();
@@ -876,7 +892,9 @@ Ask me anything to get started!`;
       })
       .subscribe();
 
-    const presence = supabase.channel(`presence-${conversationId}`, { config: { broadcast: { self: false } } });
+    const presence = supabase.channel(`presence-${conversationId}`, {
+      config: { broadcast: { self: false }, presence: { key: chatUserId } },
+    });
     presence
       .on("broadcast", { event: "typing" }, ({ payload }: any) => {
         if (!payload?.user_id || payload.user_id === chatUserId) return;
@@ -895,13 +913,22 @@ Ask me anything to get started!`;
         if (!payload || payload.user_id === chatUserId) return;
         setRemoteAiBusy(payload.busy ? { name: payload.name || "Someone" } : null);
       })
-      .subscribe();
+      .on("presence", { event: "sync" }, () => {
+        const state = presence.presenceState() as Record<string, any>;
+        setOnlineUsers(new Set(Object.keys(state)));
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presence.track({ user_id: chatUserId, online_at: new Date().toISOString() });
+        }
+      });
     presenceChannelRef.current = presence;
 
     return () => {
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(presence);
       presenceChannelRef.current = null;
+      setOnlineUsers(new Set());
     };
   }, [conversationId, chatUserId]);
 
@@ -1195,7 +1222,18 @@ Ask me anything to get started!`;
 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto min-h-0 relative" ref={messagesContainerRef} onScroll={handleScroll}>
-          {messages.length === 0 ? (
+          {loadingMessages && messages.length === 0 ? (
+            <div className="max-w-3xl mx-auto py-6 px-4 md:px-6 space-y-4 pb-44 md:pb-52">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`h-12 rounded-2xl bg-muted/60 animate-pulse ${i % 2 === 0 ? "w-2/3" : "w-3/4"}`}
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : messages.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center px-6 pb-32">
               <motion.div
                 initial={{ opacity: 0, scale: 0.85, y: 8 }}
@@ -1215,33 +1253,59 @@ Ask me anything to get started!`;
             </div>
           ) : (
             <div className="max-w-3xl mx-auto py-4 px-4 md:px-6 space-y-2 pb-44 md:pb-52">
-              {messages.map((msg, i) =>
-                <ChatMessage
-                  key={i}
-                  messageIndex={i}
-                  role={msg.role}
-                  content={msg.content}
-                  images={msg.images}
-                  products={msg.products}
-                  attachedImages={msg.attachedImages}
-                  attachedFiles={msg.attachedFiles}
-                  isStreaming={isLoading && i === messages.length - 1 && msg.role === "assistant"}
-                  isThinking={isThinking && i === messages.length - 1 && msg.role === "assistant" && !msg.content}
-                  searchStatus={i === messages.length - 1 && msg.role === "assistant" ? searchStatus : undefined}
-                  liked={msg.liked}
-                  onLikeMessage={handleLikeMessage}
-                  onShare={undefined}
-                  onStructuredAction={handleStructuredAction}
-                  onEditUserMessageAt={msg.role === "user" ? handleEditUserMessageAt : undefined}
-                  isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
-                  researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
-                  researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
-                  senderName={members.length > 0 ? msg.senderName || undefined : undefined}
-                  senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
-                  isOtherMember={msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId}
-                  bubbleColor={msg.role === "user" && msg.user_id && msg.user_id !== chatUserId ? colorForUser(msg.user_id) : null} />
+              {messages.map((msg, i) => {
+                const isOther = msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId;
+                return (
+                <motion.div
+                  key={msg.id || `idx-${i}`}
+                  initial={{ opacity: 0, y: 10, x: isOther ? -8 : msg.role === "user" ? 8 : 0 }}
+                  animate={{ opacity: 1, y: 0, x: 0 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 26, mass: 0.6 }}
+                >
+                  <ChatMessage
+                    messageIndex={i}
+                    role={msg.role}
+                    content={msg.content}
+                    images={msg.images}
+                    products={msg.products}
+                    attachedImages={msg.attachedImages}
+                    attachedFiles={msg.attachedFiles}
+                    isStreaming={isLoading && i === messages.length - 1 && msg.role === "assistant"}
+                    isThinking={isThinking && i === messages.length - 1 && msg.role === "assistant" && !msg.content}
+                    searchStatus={i === messages.length - 1 && msg.role === "assistant" ? searchStatus : undefined}
+                    liked={msg.liked}
+                    onLikeMessage={handleLikeMessage}
+                    onShare={undefined}
+                    onStructuredAction={handleStructuredAction}
+                    onEditUserMessageAt={msg.role === "user" ? handleEditUserMessageAt : undefined}
+                    isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
+                    researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
+                    researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
+                    senderName={members.length > 0 ? msg.senderName || undefined : undefined}
+                    senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
+                    isOtherMember={isOther}
+                    bubbleColor={isOther ? colorForUser(msg.user_id!) : null}
+                  />
+                </motion.div>
+                );
+              })}
+              {/* System events (join/leave) */}
+              <AnimatePresence>
+                {systemEvents.slice(-3).map((ev) => (
+                  <motion.div
+                    key={ev.id}
+                    initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="flex justify-center my-2"
+                  >
+                    <span className="px-3 py-1 rounded-full bg-muted/60 text-[11px] text-muted-foreground">
+                      {ev.text}
+                    </span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
 
-              )}
               {/* Typing indicator */}
               {typingUsers.length > 0 && (
                 <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
@@ -1360,11 +1424,30 @@ Ask me anything to get started!`;
 
               {renderAttachments()}
 
-              {remoteAiBusy && (
-                <div className="mx-auto px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 text-xs text-center">
-                  ⏳ {remoteAiBusy.name} is chatting with AI… please wait
-                </div>
-              )}
+              <AnimatePresence>
+                {remoteAiBusy && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                    className="relative mx-auto overflow-hidden px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border border-amber-500/30 text-amber-600 text-xs flex items-center justify-center gap-2"
+                  >
+                    <span className="flex gap-0.5">
+                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </span>
+                    <span className="font-medium">Megsy is replying to {remoteAiBusy.name}…</span>
+                    <motion.span
+                      className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-amber-400/20 to-transparent"
+                      animate={{ x: ["-100%", "200%"] }}
+                      transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
 
 
               <div className="relative mx-auto w-full max-w-3xl">
@@ -1591,17 +1674,23 @@ Ask me anything to get started!`;
                   {members.map((m) => {
                     const c = colorForUser(m.id);
                     const isOwner = chatUserId && conversationOwnerId === chatUserId;
+                    const isOnline = onlineUsers.has(m.id);
                     return (
                       <div key={m.id} className="flex items-center gap-2 py-1">
-                        {m.avatar ? (
-                          <img src={m.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
-                            {(m.name || "?")[0]?.toUpperCase()}
-                          </div>
-                        )}
+                        <div className="relative">
+                          {m.avatar ? (
+                            <img src={m.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                              {(m.name || "?")[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          {isOnline && (
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white" title="Online" />
+                          )}
+                        </div>
                         <span className="text-xs text-black flex-1 truncate">{m.name || "Member"}</span>
-                        <span className="text-[10px] text-black/50 capitalize">{m.role}</span>
+                        <span className="text-[10px] text-black/50 capitalize">{isOnline ? "online" : m.role}</span>
                         {isOwner && (
                           <button
                             onClick={() => handleKickMember(m.id)}
