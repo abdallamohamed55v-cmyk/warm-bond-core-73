@@ -1380,6 +1380,8 @@ async function handleToolCalls(
         if (isDeepResearch) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "search_query", query: searchQuery })}\n\n`));
         }
+        const searchTaskId = newTaskId();
+        emitTaskStart(searchTaskId, "search", `Searching the web`, searchQuery);
         pushStatus(isDeepResearch ? "Gathering trusted sources..." : "Searching the web...");
 
         const searchRequest = fetchWithTimeout("https://google.serper.dev/search", {
