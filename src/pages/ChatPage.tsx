@@ -86,10 +86,13 @@ const normalizeStatusLabel = (status: string) => {
   const lower = status.toLowerCase();
   const blocklist = ["web_search", "browse_website", "shopping_search", "convert_currency", "generate_image", "generate_video", "generate_voice", "canva_create_slides", "running ", "tool_call", "function_call"];
   if (blocklist.some(b => lower.includes(b))) return "Working on your request...";
+  if (/browser task failed|browser task timed out|working on it|navigating|loading page/i.test(lower)) return "Checking other sources...";
   if (/https?:\/\//i.test(status)) return "Searching the web...";
   if (/writing the report/i.test(lower)) return "Writing the final report...";
   if (/analyzing products/i.test(lower)) return "Comparing the best options...";
   if (/searching for products|searching stores/i.test(lower)) return "Searching stores...";
+  if (/consulting/i.test(lower)) return "Checking trusted references...";
+  if (/reading top sources|deep_read/i.test(lower)) return "Reading sources in depth...";
   if (/searching:|gathering/i.test(lower)) return "Searching the web...";
   if (/found\s+\d+\s+(results|products)/i.test(lower)) return "Reviewing the results...";
   if (/search completed/i.test(lower)) return "Search completed.";
@@ -123,6 +126,7 @@ const ChatPage = () => {
   const [researchPlan, setResearchPlan] = useState<ResearchPlan | null>(null);
   const [researchTasks, setResearchTasks] = useState<ResearchTask[]>([]);
   const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
+  const researchTasksRef = useRef<ResearchTask[]>([]);
   const [clarifyQs, setClarifyQs] = useState<ClarifyQuestion[] | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareMode, setShareMode] = useState<"private" | "public">("public");
@@ -175,6 +179,16 @@ const ChatPage = () => {
   const [userName, setUserName] = useState<string>("");
   const [plusView, setPlusView] = useState<"main" | "tools">("main");
   const [userIntegrations, setUserIntegrations] = useState<string[]>([]);
+
+  const upsertResearchTask = useCallback((task: ResearchTask) => {
+    researchTasksRef.current = [...researchTasksRef.current.filter((x) => x.id !== task.id), task];
+    setResearchTasks(researchTasksRef.current);
+  }, []);
+
+  const updateResearchTask = useCallback((id: string, patch: Partial<ResearchTask>) => {
+    researchTasksRef.current = researchTasksRef.current.map((task) => task.id === id ? { ...task, ...patch } : task);
+    setResearchTasks(researchTasksRef.current);
+  }, []);
 
   // Fetch user info for memory + welcome message
   useEffect(() => {
