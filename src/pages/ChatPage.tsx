@@ -1577,6 +1577,9 @@ Ask me anything to get started!`;
                     isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
                     researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
                     researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
+                    researchPlan={msg.role === "assistant" && i === messages.length - 1 ? researchPlan : null}
+                    researchTasks={msg.role === "assistant" && i === messages.length - 1 ? researchTasks : []}
+                    researchSummary={msg.role === "assistant" && i === messages.length - 1 ? researchSummary : null}
                     senderName={members.length > 0 ? msg.senderName || undefined : undefined}
                     senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
                     isOtherMember={isOther}
