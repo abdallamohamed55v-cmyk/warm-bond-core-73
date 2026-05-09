@@ -9,6 +9,7 @@ const corsHeaders = {
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v1";
 const LEMONDATA_URL = "https://api.lemondata.cc/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const LOVABLE_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const SHOPPY_WISE_BASE = "https://ygsoyowrumtntnlasmmh.supabase.co/functions/v1";
 const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
 const COMPLEX_MODEL = "moonshotai/kimi-k2.5:nitro";
@@ -113,6 +114,11 @@ async function getHyperbrowserKey(sb: any): Promise<string | null> {
 // ── OpenRouter key ──
 function getOpenRouterKey(): string | null {
   return Deno.env.get("OPENROUTER_API_KEY") || null;
+}
+
+// ── Lovable AI Gateway key ──
+function getLovableKey(): string | null {
+  return Deno.env.get("LOVABLE_API_KEY") || null;
 }
 
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000): Promise<Response> {
@@ -286,11 +292,19 @@ function getNextFallbackModel(currentModel: string): string | null {
   return OPENROUTER_FALLBACK_MODELS.find((candidate) => candidate !== currentModel) ?? null;
 }
 
-function normalizeModelForProvider(model: string, provider: "openrouter" | "lemondata"): string {
+function normalizeModelForProvider(model: string, provider: "openrouter" | "lemondata" | "lovable"): string {
   // LemonData expects bare model IDs (e.g. "gemini-2.5-flash-lite"), not "google/gemini-2.5-flash-lite"
   if (provider === "lemondata") {
     const slash = model.indexOf("/");
     return slash === -1 ? model : model.slice(slash + 1);
+  }
+  if (provider === "lovable") {
+    // Remap unsupported models to the closest Lovable AI Gateway model
+    const m = model.toLowerCase();
+    if (m.startsWith("moonshotai/") || m.startsWith("kimi")) return "openai/gpt-5";
+    if (m.startsWith("anthropic/")) return "openai/gpt-5";
+    if (m === "google/gemini-2.5-flash-lite-preview-09-2025") return "google/gemini-2.5-flash-lite";
+    return model;
   }
   return model;
 }
@@ -478,14 +492,20 @@ serve(async (req) => {
     const effectiveTier: MegsyTier = resolveTier(requestedTier ?? userPersonalization?.preferred_tier, userPlan);
     // If caller passed an explicit raw model ID, honor it; otherwise pick from tier.
     let modelId: string = requestedModel ?? pickModelForTier(effectiveTier, needsComplexModel);
-    let apiUrl = OPENROUTER_URL;
+    let apiUrl = LOVABLE_URL;
     let apiKey = "";
     let usedKeyId: string | null = null;
-    let provider: "openrouter" | "lemondata" = "openrouter";
+    let provider: "openrouter" | "lemondata" | "lovable" = "lovable";
 
-    // Try OpenRouter first (env secret)
+    // Try Lovable AI Gateway first (preferred for testing)
+    const lovKey = getLovableKey();
     const orKey = getOpenRouterKey();
-    if (orKey) {
+    if (lovKey) {
+      apiUrl = LOVABLE_URL;
+      apiKey = lovKey;
+      provider = "lovable";
+    } else if (orKey) {
+      apiUrl = OPENROUTER_URL;
       apiKey = orKey;
       provider = "openrouter";
     } else {
@@ -806,6 +826,29 @@ CORE IDENTITY (NEVER VIOLATE):
         const nextModel = getNextFallbackModel(modelId);
         if (nextModel) {
           modelId = nextModel;
+          body.model = normalizeModelForProvider(modelId, provider);
+          retryCount++;
+          continue;
+        }
+      }
+
+      // If Lovable fails with auth/rate/credits/server errors, fallback to OpenRouter then LemonData
+      if (provider === "lovable" && (failStatus === 401 || failStatus === 403 || failStatus === 429 || failStatus === 402 || failStatus >= 500)) {
+        const orK = getOpenRouterKey();
+        if (orK) {
+          apiUrl = OPENROUTER_URL;
+          apiKey = orK;
+          provider = "openrouter";
+          body.model = normalizeModelForProvider(modelId, provider);
+          retryCount++;
+          continue;
+        }
+        const lemonKey = await getLemonDataKey(sb);
+        if (lemonKey) {
+          apiUrl = LEMONDATA_URL;
+          apiKey = lemonKey.api_key;
+          usedKeyId = lemonKey.id;
+          provider = "lemondata";
           body.model = normalizeModelForProvider(modelId, provider);
           retryCount++;
           continue;
