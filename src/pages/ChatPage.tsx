@@ -67,6 +67,10 @@ interface ProductResult {
   delivery?: string | null;
 }
 
+const EMPTY_RESEARCH_TASKS: ResearchTask[] = [];
+const EMPTY_READERS: { user_id: string; name?: string; avatar?: string }[] = [];
+const EMPTY_REACTIONS: { id: string; emoji: string; user_id: string }[] = [];
+
 type ChatMode = "normal" | "learning" | "shopping" | "deep-research";
 
 const MODE_PROMPTS: Record<ChatMode, string> = {
@@ -503,6 +507,8 @@ const ChatPage = () => {
     }
 
     let assistantContent = "";
+    let assistantRenderTimer: ReturnType<typeof setTimeout> | null = null;
+    let hasStartedResponse = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
     let searchImages: string[] = [];
@@ -522,15 +528,41 @@ const ChatPage = () => {
       ].includes(trimmed);
     };
 
-    const updateAssistant = (chunk: string) => {
-      if (isToolMarkerChunk(chunk)) return;
-      setIsThinking(false);setSearchStatus("");
-      assistantContent += chunk;
+    const flushAssistantUpdate = () => {
+      assistantRenderTimer = null;
+      const nextContent = assistantContent;
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        if (last?.role === "assistant") return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent, products: m.products ?? streamedProducts } : m);
-        return [...prev, { role: "assistant", content: assistantContent, products: streamedProducts }];
+        if (last?.role === "assistant") {
+          if (last.content === nextContent && (last.products || EMPTY_REACTIONS) === (last.products ? last.products : streamedProducts)) return prev;
+          const next = prev.slice();
+          next[next.length - 1] = { ...last, content: nextContent, products: last.products ?? streamedProducts };
+          return next;
+        }
+        return [...prev, { role: "assistant", content: nextContent, products: streamedProducts }];
       });
+    };
+
+    const scheduleAssistantUpdate = (immediate = false) => {
+      if (immediate) {
+        if (assistantRenderTimer) clearTimeout(assistantRenderTimer);
+        flushAssistantUpdate();
+        return;
+      }
+      if (assistantRenderTimer) return;
+      assistantRenderTimer = setTimeout(flushAssistantUpdate, 90);
+    };
+
+    const updateAssistant = (chunk: string) => {
+      if (isToolMarkerChunk(chunk)) return;
+      if (!hasStartedResponse) {
+        hasStartedResponse = true;
+        setIsThinking(false);
+        setSearchStatus("");
+      }
+      const wasEmpty = assistantContent.length === 0;
+      assistantContent += chunk;
+      scheduleAssistantUpdate(wasEmpty);
     };
 
     const allMessages = [...messages, userMsg].map((m) => {
@@ -588,7 +620,9 @@ const ChatPage = () => {
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last?.role !== "assistant") return prev;
-          return prev.map((m, i) => i === prev.length - 1 ? { ...m, products } : m);
+          const next = prev.slice();
+          next[next.length - 1] = { ...last, products };
+          return next;
         });
       },
       onStatus: (status) => {
@@ -649,6 +683,10 @@ const ChatPage = () => {
         }
       },
       onDone: async () => {
+        if (assistantRenderTimer) {
+          clearTimeout(assistantRenderTimer);
+          flushAssistantUpdate();
+        }
         setIsLoading(false);setIsThinking(false);setSearchStatus("");
         isSubmittingRef.current = false;
         if (isDeepResearch && researchTasksRef.current.some((task) => task.status === "running")) {
@@ -668,12 +706,14 @@ const ChatPage = () => {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role !== "assistant") return prev;
-            return prev.map((m, i) => i === prev.length - 1 ? {
-              ...m,
-              id: aId || m.id,
-              images: searchImages.length > 0 ? searchImages : m.images,
-              products: streamedProducts.length > 0 ? streamedProducts : m.products,
-            } : m);
+            const next = prev.slice();
+            next[next.length - 1] = {
+              ...last,
+              id: aId || last.id,
+              images: searchImages.length > 0 ? searchImages : last.images,
+              products: streamedProducts.length > 0 ? streamedProducts : last.products,
+            };
+            return next;
           });
           const dbMode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
           await supabase.from("conversations").update({ updated_at: new Date().toISOString(), mode: dbMode } as any).eq("id", resolvedConversationId);
@@ -681,6 +721,7 @@ const ChatPage = () => {
         }
       },
       onError: (err) => {
+        if (assistantRenderTimer) clearTimeout(assistantRenderTimer);
         toast.error(err);setIsThinking(false);setIsLoading(false);setSearchStatus("");
         if (presenceChannelRef.current && chatUserId) {
           presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, busy: false } });
@@ -1074,6 +1115,21 @@ Ask me anything to get started!`;
         }
         setMessages((prev) => {
           if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
+          const localPendingIndex = newMsg.user_id === chatUserId
+            ? prev.findIndex((m) => !m.id && m.role === newMsg.role && m.content === newMsg.content)
+            : -1;
+          if (localPendingIndex >= 0) {
+            const next = prev.slice();
+            next[localPendingIndex] = {
+              ...next[localPendingIndex],
+              images: newMsg.images || next[localPendingIndex].images,
+              id: newMsg.id,
+              user_id: newMsg.user_id,
+              senderName,
+              senderAvatar,
+            };
+            return next;
+          }
           return [...prev, {
             role: newMsg.role,
             content: newMsg.content,
@@ -1177,6 +1233,17 @@ Ask me anything to get started!`;
     if (chatUserId) m[chatUserId] = { name: userName || "You", avatar: undefined };
     return m;
   }, [members, chatUserId, userName]);
+
+  const readersByMessageId = useMemo(() => {
+    const result: Record<string, { user_id: string; name?: string; avatar?: string }[]> = {};
+    Object.entries(messageReads).forEach(([messageId, readers]) => {
+      const visibleReaders = readers
+        .filter((r) => r.user_id !== chatUserId)
+        .map((r) => ({ user_id: r.user_id, name: memberMap[r.user_id]?.name, avatar: memberMap[r.user_id]?.avatar }));
+      if (visibleReaders.length > 0) result[messageId] = visibleReaders;
+    });
+    return result;
+  }, [messageReads, chatUserId, memberMap]);
 
   // Load reactions + reads for current conversation, subscribe to realtime
   useEffect(() => {
@@ -1748,7 +1815,7 @@ Ask me anything to get started!`;
                     researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
                     researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
                     researchPlan={msg.role === "assistant" && i === messages.length - 1 ? researchPlan : null}
-                    researchTasks={msg.role === "assistant" && i === messages.length - 1 ? researchTasks : []}
+                    researchTasks={msg.role === "assistant" && i === messages.length - 1 ? researchTasks : EMPTY_RESEARCH_TASKS}
                     researchSummary={msg.role === "assistant" && i === messages.length - 1 ? researchSummary : null}
                     senderName={members.length > 0 ? msg.senderName || undefined : undefined}
                     senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
@@ -1756,9 +1823,9 @@ Ask me anything to get started!`;
                     bubbleColor={isOther ? colorForUser(msg.user_id!) : null}
                     messageId={msg.id}
                     currentUserId={chatUserId || undefined}
-                    reactions={msg.id ? messageReactions[msg.id] : undefined}
+                    reactions={msg.id ? (messageReactions[msg.id] || EMPTY_REACTIONS) : EMPTY_REACTIONS}
                     onToggleReaction={msg.id ? toggleReaction : undefined}
-                    readers={msg.id ? (messageReads[msg.id] || []).filter((r) => r.user_id !== chatUserId).map((r) => ({ user_id: r.user_id, name: memberMap[r.user_id]?.name, avatar: memberMap[r.user_id]?.avatar })) : []}
+                    readers={msg.id ? (readersByMessageId[msg.id] || EMPTY_READERS) : EMPTY_READERS}
                     showReaders={members.length > 0 && msg.role === "user" && msg.user_id === chatUserId && i === messages.length - 1 - (messages[messages.length - 1]?.role === "assistant" ? 1 : 0)}
                   />
                 </motion.div>
