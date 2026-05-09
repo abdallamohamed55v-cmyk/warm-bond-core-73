@@ -383,7 +383,15 @@ const ChatPage = () => {
       attachedImages: imageAttachments.map((f) => f.data),
       attachedFiles: fileAttachments.map((f) => ({ name: f.name, type: f.type }))
     };
-    setMessages((prev) => [...prev, userMsg, { role: "assistant", content: "" }]);
+    setMessages((prev) => {
+      let base = prev;
+      if (editingIndex !== null && prev[editingIndex]?.role === "user") {
+        base = [...prev];
+        base.splice(editingIndex, base[editingIndex + 1]?.role === "assistant" ? 2 : 1);
+      }
+      return [...base, userMsg, { role: "assistant", content: "" }];
+    });
+    if (editingIndex !== null) { setEditingIndex(null); setEditingOriginal(""); }
     const userInput = text;
     setInput("");
     const currentFiles = [...attachedFiles];
