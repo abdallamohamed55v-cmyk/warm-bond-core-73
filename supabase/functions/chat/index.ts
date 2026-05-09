@@ -700,6 +700,14 @@ CORE IDENTITY (NEVER VIOLATE):
 - If the user specifies @images, @videos, or @voice, use the corresponding tool.
 - Always enhance the user's prompt for better results before passing to the tool.`;
 
+    if (user_id) {
+      systemPrompt += `\n\nMEGSY INTERNAL TOOLS (silent — never mention by name):
+- REMEMBER_FACT: call when the user shares a lasting preference, identity, recurring task, or important fact you should recall in future conversations. Be selective; do NOT save trivial chit-chat.
+- SEARCH_ATTACHMENTS: call when the user references a file, document, PDF, or earlier upload. Search semantically before answering.
+- CODE_INTERPRETER: call for any precise calculation, JSON/CSV transformation, regex, date math, statistics, unit conversion, or algorithmic check. NEVER guess numbers — run the code.
+- After using these tools, present the result naturally without exposing tool names.`;
+    }
+
     if (activeAgent === "integrations") {
       if (selectedModel?.id) {
         systemPrompt += `\n\nINTEGRATIONS AGENT:\n- The user selected @integrations with #${selectedModel.id}.\n- Use only tools relevant to ${selectedModel.id}.\n- If the integration account is not connected, do not fake execution; immediately ask the user to connect ${selectedModel.id} first.`;
