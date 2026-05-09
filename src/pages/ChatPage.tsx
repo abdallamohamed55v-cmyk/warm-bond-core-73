@@ -105,6 +105,11 @@ const ChatPage = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationTitle, setConversationTitle] = useState("");
   const [searchEnabled, setSearchEnabled] = useState(true);
+  const [megsyTier, setMegsyTier] = useState<"lite" | "pro" | "max">(() => {
+    if (typeof window === "undefined") return "lite";
+    return (localStorage.getItem("megsy_tier") as any) || "lite";
+  });
+  const [userPlan, setUserPlan] = useState<string>("free");
   const [computerUseEnabled, setComputerUseEnabled] = useState(true);
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [attachedFiles, setAttachedFiles] = useState<{name: string;type: string;data: string;}[]>([]);
