@@ -13,42 +13,6 @@ import DeepResearchCard from "./chat/DeepResearchCard";
 import ResearchTaskTimeline, { type ResearchTask } from "./research/ResearchTaskTimeline";
 import ResearchPlanCard, { type ResearchPlan } from "./research/ResearchPlanCard";
 import ResearchSummaryCard, { type ResearchSummary } from "./research/ResearchSummaryCard";
-import {
-  InlineCitation,
-  InlineCitationCard,
-  InlineCitationCardBody,
-  InlineCitationCardTrigger,
-  InlineCitationCarousel,
-  InlineCitationCarouselContent,
-  InlineCitationCarouselHeader,
-  InlineCitationCarouselIndex,
-  InlineCitationCarouselItem,
-  InlineCitationCarouselNext,
-  InlineCitationCarouselPrev,
-  InlineCitationSource,
-  InlineCitationText,
-} from "@/components/ai-elements/inline-citation";
-
-const extractDomainSafe = (url: string): string => {
-  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
-};
-
-const collectSourceUrls = (md: string): string[] => {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  const re = /\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(md)) !== null) {
-    const u = m[1];
-    if (!seen.has(u)) { seen.add(u); out.push(u); }
-  }
-  const bare = /(?:^|\s)(https?:\/\/[^\s)\]]+)/g;
-  while ((m = bare.exec(md)) !== null) {
-    const u = m[1].replace(/[.,;:!?]+$/, "");
-    if (!seen.has(u)) { seen.add(u); out.push(u); }
-  }
-  return out;
-};
 
 interface ChatMessageProps {
   role: "user" | "assistant";
@@ -203,10 +167,7 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
   content: string; 
   onLinkClick: (e: React.MouseEvent<HTMLAnchorElement>, href: string) => void;
   onPreviewCode?: (code: string, lang: string) => void;
-}) => {
-  const formatted = formatRawUrls(content);
-  const sources = useMemo(() => collectSourceUrls(formatted), [formatted]);
-  return (
+}) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
     components={{
@@ -214,52 +175,11 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
       li: ({ children }) => <li><BidiText>{children}</BidiText></li>,
       strong: ({ children }) => <strong><BidiText>{children}</BidiText></strong>,
       em: ({ children }) => <em><BidiText>{children}</BidiText></em>,
-      a: ({ href, children }) => {
-        if (!href || !/^https?:\/\//i.test(href)) {
-          return <a href={href} className="text-primary underline underline-offset-2">{children}</a>;
-        }
-        const idx = sources.indexOf(href);
-        const number = idx >= 0 ? idx + 1 : 1;
-        const domain = extractDomainSafe(href);
-        const text = typeof children === "string" ? children : "";
-        // Render the linked text inline + a small numbered citation chip with hover card
-        return (
-          <InlineCitation>
-            <InlineCitationText>
-              <a
-                href={href}
-                onClick={(e) => onLinkClick(e, href)}
-                className="text-primary underline underline-offset-2 cursor-pointer hover:opacity-80"
-              >
-                {children}
-              </a>
-            </InlineCitationText>
-            <InlineCitationCard>
-              <InlineCitationCardTrigger sources={[href]}>
-                <span className="text-[10px] font-medium">{number}</span>
-              </InlineCitationCardTrigger>
-              <InlineCitationCardBody>
-                <InlineCitationCarousel>
-                  <InlineCitationCarouselHeader>
-                    <InlineCitationCarouselPrev />
-                    <InlineCitationCarouselIndex />
-                    <InlineCitationCarouselNext />
-                  </InlineCitationCarouselHeader>
-                  <InlineCitationCarouselContent>
-                    <InlineCitationCarouselItem>
-                      <InlineCitationSource
-                        title={text || domain}
-                        url={href}
-                        description={domain}
-                      />
-                    </InlineCitationCarouselItem>
-                  </InlineCitationCarouselContent>
-                </InlineCitationCarousel>
-              </InlineCitationCardBody>
-            </InlineCitationCard>
-          </InlineCitation>
-        );
-      },
+      a: ({ href, children }) => (
+        <a href={href} onClick={(e) => href && onLinkClick(e, href)} className="text-primary underline underline-offset-2 cursor-pointer hover:opacity-80">
+          {children}
+        </a>
+      ),
       code: ({ className, children, ...props }) => {
         const match = /language-(\w+)/.exec(className || "");
         const lang = match ? match[1] : undefined;
@@ -304,10 +224,9 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
       td: ({ children }) => <td className="px-3 py-2 text-xs text-muted-foreground border-t border-border/50">{children}</td>,
     }}
   >
-    {formatted}
+    {formatRawUrls(content)}
   </ReactMarkdown>
-  );
-};
+);
 
 const SelectTextModal = ({ open, onClose, text, onCopy }: { open: boolean; onClose: () => void; text: string; onCopy: () => void }) => (
   <AnimatePresence>
@@ -699,23 +618,20 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
       (isDeepResearch === true));
   const showResearchCard = looksLikeResearch && !isStreaming && content.trim().length > 200;
 
-  const hasChainOfThought = role === "assistant" && !!researchTasks && researchTasks.length > 0;
-  const showResearchPanels = role === "assistant" && (
-    (isDeepResearch && (researchPlan || researchSummary)) || hasChainOfThought
-  );
+  const showResearchPanels = role === "assistant" && isDeepResearch && (researchPlan || (researchTasks && researchTasks.length > 0) || researchSummary);
 
   return (
     <div className="mb-6 relative">
       {showResearchPanels && (
         <div className="space-y-2">
-          {isDeepResearch && researchPlan && <ResearchPlanCard plan={researchPlan} />}
-          {hasChainOfThought && (
-            <ResearchTaskTimeline tasks={researchTasks!} isActive={!!isStreaming || (!!isThinking && !content)} />
+          {researchPlan && <ResearchPlanCard plan={researchPlan} />}
+          {researchTasks && researchTasks.length > 0 && (
+            <ResearchTaskTimeline tasks={researchTasks} isActive={!!isStreaming || (!!isThinking && !content)} />
           )}
-          {isDeepResearch && researchSummary && !isStreaming && <ResearchSummaryCard summary={researchSummary} />}
+          {researchSummary && !isStreaming && <ResearchSummaryCard summary={researchSummary} />}
         </div>
       )}
-      {isThinking && !content && !hasChainOfThought ? (
+      {isThinking && !content && !showResearchPanels ? (
         <ThinkingLoader searchStatus={searchStatus} />
       ) : showResearchCard ? (
         <DeepResearchCard

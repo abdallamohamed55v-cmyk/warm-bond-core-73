@@ -1290,16 +1290,12 @@ async function handleToolCalls(
   // Task event helpers (Deep Research v2 streaming)
   const newTaskId = () => `t_${Math.random().toString(36).slice(2, 10)}`;
   const emitTaskStart = (id: string, kind: string, label: string, target?: string) => {
+    if (!isDeepResearch) return;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_start", id, kind, label, target })}\n\n`));
   };
   const emitTaskDone = (id: string, summary?: string, error?: string) => {
+    if (!isDeepResearch) return;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_done", id, summary, error })}\n\n`));
-  };
-  const emitTaskPatch = (id: string, patch: Record<string, unknown>) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_update", id, ...patch })}\n\n`));
-  };
-  const extractDomain = (url: string): string => {
-    try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
   };
   const researchStartedAt = Date.now();
   const researchSourcesSet = new Set<string>();
@@ -1476,35 +1472,17 @@ async function handleToolCalls(
 
         if (imageData?.images) {
           imageData.images.slice(0, isDeepResearch ? 4 : 3).forEach((img: any) => {
-            if (img.imageUrl) {
-              allImages.add(img.imageUrl);
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                event: "image_found",
-                url: img.imageUrl,
-                caption: img.title || img.source || searchQuery,
-                query: searchQuery,
-              })}\n\n`));
-            }
+            if (img.imageUrl) allImages.add(img.imageUrl);
           });
-        }
-
-        // Emit unique source domains so the UI can render chips under the search step
-        const domains = Array.from(new Set(
-          (searchData.organic || [])
-            .map((r: any) => extractDomain(r?.link || ""))
-            .filter((d: string) => d.length > 0)
-        )).slice(0, 6);
-        if (domains.length > 0) {
-          emitTaskPatch(searchTaskId, { domains });
         }
 
         const organicCount = searchData.organic?.length || 0;
         pushStatus(organicCount > 0 ? (isDeepResearch ? "Reviewing the sources..." : "Reviewing the results...") : "Search completed");
         allSearchResults.push(context);
-        emitTaskDone(searchTaskId, `${organicCount} result${organicCount === 1 ? "" : "s"}${domains.length ? ` from ${domains.slice(0, 3).join(", ")}` : ""}`);
         if (isDeepResearch) {
           (searchData.organic || []).forEach((r: any) => { if (r?.link) researchSourcesSet.add(r.link); });
           researchChannels.add("Web");
+          emitTaskDone(searchTaskId, `${organicCount} results`);
         }
 
         // ── Deep Research enrichment: layer multiple free open sources in parallel.
