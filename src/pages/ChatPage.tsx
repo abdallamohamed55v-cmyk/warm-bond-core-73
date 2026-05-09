@@ -609,11 +609,11 @@ const ChatPage = () => {
           if (Array.isArray(payload.questions)) setClarifyQs(payload.questions);
         } else if (ev === "task_start") {
           const t: ResearchTask = { id: payload.id, kind: payload.kind || "search", label: payload.label || "Working…", target: payload.target, status: "running" };
-          setResearchTasks((prev) => [...prev.filter((x) => x.id !== t.id), t]);
+          upsertResearchTask(t);
         } else if (ev === "task_update") {
-          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, label: payload.label || x.label, target: payload.target ?? x.target } : x));
+          updateResearchTask(payload.id, { label: payload.label, target: payload.target });
         } else if (ev === "task_done") {
-          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, status: payload.error ? "error" : "done", summary: payload.summary } : x));
+          updateResearchTask(payload.id, { status: payload.error ? "error" : "done", summary: payload.summary });
         } else if (ev === "final_summary") {
           researchTasksRef.current = researchTasksRef.current.map((task) => task.status === "running" ? { ...task, status: "done" } : task);
           setResearchTasks(researchTasksRef.current);
