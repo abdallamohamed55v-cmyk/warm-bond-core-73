@@ -610,7 +610,21 @@ const ChatPage = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach((file) => {
+    const fileList = Array.from(files);
+    if (attachedFiles.length + fileList.length > 5) {
+      toast.error("Maximum 5 files allowed");
+      e.target.value = "";
+      return;
+    }
+    fileList.forEach((file) => {
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 20MB)`);
+        return;
+      }
+      if (file.size === 0) {
+        toast.error(`${file.name} is empty`);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => setAttachedFiles((prev) => [...prev, { name: file.name, type: "image", data: reader.result as string }]);
       reader.readAsDataURL(file);
@@ -621,6 +635,16 @@ const ChatPage = () => {
   const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (attachedFiles.length >= 5) {
+      toast.error("Maximum 5 files allowed");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(`${file.name} is too large (max 20MB)`);
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => setAttachedFiles((prev) => [...prev, { name: file.name, type: "image", data: reader.result as string }]);
     reader.readAsDataURL(file);
