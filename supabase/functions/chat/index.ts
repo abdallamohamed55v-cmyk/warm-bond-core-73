@@ -9,6 +9,7 @@ const corsHeaders = {
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v1";
 const LEMONDATA_URL = "https://api.lemondata.cc/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const LOVABLE_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const SHOPPY_WISE_BASE = "https://ygsoyowrumtntnlasmmh.supabase.co/functions/v1";
 const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
 const COMPLEX_MODEL = "moonshotai/kimi-k2.5:nitro";
