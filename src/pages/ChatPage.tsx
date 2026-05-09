@@ -1349,11 +1349,11 @@ Ask me anything to get started!`;
               >
                 {[
                   { icon: Plus, label: "New chat", onClick: handleNewChat, featured: true },
-                  { icon: Share2, label: "Share chat", onClick: handleShare, hint: isShared ? "Public link" : undefined },
+                  { icon: Share2, label: "Share chat", onClick: handleShare },
                   { icon: UserPlus, label: "Invite people", onClick: handleInvite },
                   { icon: Pencil, label: "Rename", onClick: () => { setRenameValue(conversationTitle); setIsRenaming(true); } },
                   { icon: Pin, label: isPinned ? "Unpin chat" : "Pin chat", onClick: handleTogglePin },
-                ].map(({ icon: Icon, label, onClick, hint, featured }) => (
+                ].map(({ icon: Icon, label, onClick, featured }) => (
                   <DropdownMenuItem
                     key={label}
                     onClick={onClick}
@@ -1363,7 +1363,6 @@ Ask me anything to get started!`;
                       <Icon className={`w-[15px] h-[15px] ${featured ? "text-purple-400" : "text-foreground/85"}`} strokeWidth={1.9} />
                     </span>
                     <span className={`flex-1 truncate ${featured ? "font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent" : ""}`}>{label}</span>
-                    {hint && <span className="text-[10.5px] text-muted-foreground">{hint}</span>}
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator className="my-1.5 bg-border/40" />
