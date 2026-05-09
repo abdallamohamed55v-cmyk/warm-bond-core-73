@@ -508,12 +508,16 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               ))}
             </div>
           )}
+          {(() => { const l = detectLang(content); return (
           <div
-            className="px-4 py-2.5 rounded-3xl rounded-bl-lg text-[0.9375rem] leading-relaxed select-text"
+            dir={langDir(l)}
+            lang={l === "ar" ? "ar" : l === "en" ? "en" : undefined}
+            className={`px-4 py-2.5 rounded-3xl rounded-bl-lg text-[0.9375rem] leading-relaxed select-text user-bubble lang-${l}`}
             style={bubbleColor ? { background: bubbleColor.bg, color: bubbleColor.text } : { background: "hsl(var(--muted))", color: "hsl(var(--foreground))" }}
           >
             {content}
           </div>
+          ); })()}
         </div>
       </div>
     );
