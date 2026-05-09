@@ -1290,12 +1290,16 @@ async function handleToolCalls(
   // Task event helpers (Deep Research v2 streaming)
   const newTaskId = () => `t_${Math.random().toString(36).slice(2, 10)}`;
   const emitTaskStart = (id: string, kind: string, label: string, target?: string) => {
-    if (!isDeepResearch) return;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_start", id, kind, label, target })}\n\n`));
   };
   const emitTaskDone = (id: string, summary?: string, error?: string) => {
-    if (!isDeepResearch) return;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_done", id, summary, error })}\n\n`));
+  };
+  const emitTaskPatch = (id: string, patch: Record<string, unknown>) => {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_update", id, ...patch })}\n\n`));
+  };
+  const extractDomain = (url: string): string => {
+    try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
   };
   const researchStartedAt = Date.now();
   const researchSourcesSet = new Set<string>();
