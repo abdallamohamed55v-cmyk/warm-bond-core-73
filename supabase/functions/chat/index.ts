@@ -1909,6 +1909,22 @@ async function handleToolCalls(
         continue;
       }
 
+      // Internal tools that must never route into the Composio "Connect account" flow.
+      // If we got here it means the relevant API key (Serper / Hyperbrowser / etc.) is
+      // missing — emit a clean fallback message instead of asking the user to connect a
+      // non-existent "WEB" / "BROWSE" / "SHOPPING" account.
+      const INTERNAL_TOOLS = new Set([
+        "WEB_SEARCH", "BROWSE_WEBSITE", "SHOPPING_SEARCH", "CONVERT_CURRENCY",
+        "GENERATE_IMAGE", "GENERATE_VIDEO", "GENERATE_VOICE", "CANVA_CREATE_SLIDES",
+        "REMEMBER_FACT", "SEARCH_ATTACHMENTS", "CODE_INTERPRETER",
+      ]);
+      if (toolName && INTERNAL_TOOLS.has(toolName)) {
+        if (toolName === "WEB_SEARCH" || toolName === "BROWSE_WEBSITE") {
+          allSearchResults.push("Web search is temporarily unavailable. Answering from general knowledge.");
+        }
+        continue;
+      }
+
       if (!COMPOSIO_API_KEY || !toolName) continue;
 
       pushStatus(`Executing ${toolName.split("_")[0]} action...`);
