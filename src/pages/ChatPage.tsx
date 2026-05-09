@@ -186,7 +186,8 @@ const ChatPage = () => {
   }, []);
 
   const updateResearchTask = useCallback((id: string, patch: Partial<ResearchTask>) => {
-    researchTasksRef.current = researchTasksRef.current.map((task) => task.id === id ? { ...task, ...patch } : task);
+    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<ResearchTask>;
+    researchTasksRef.current = researchTasksRef.current.map((task) => task.id === id ? { ...task, ...cleanPatch } : task);
     setResearchTasks(researchTasksRef.current);
   }, []);
 
