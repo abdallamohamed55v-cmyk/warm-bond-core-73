@@ -1767,17 +1767,26 @@ Ask me anything to get started!`;
         {/* Rename Dialog - Glass */}
         <Dialog open={isRenaming} onOpenChange={setIsRenaming}>
           <DialogContent className={`${glassDialogClass} sm:max-w-sm`}>
-            <div className="p-5 space-y-3">
-              <DialogHeader>
-                <DialogTitle className="text-lg text-foreground">Rename chat</DialogTitle>
-              </DialogHeader>
+            <div className="p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0">
+                  <Pencil className="w-5 h-5 text-primary" strokeWidth={2} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <DialogTitle className="text-base font-semibold text-foreground">Rename chat</DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-1">
+                    Give this conversation a new name.
+                  </DialogDescription>
+                </div>
+              </div>
               <Input
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
-                className="h-12 rounded-2xl border-border/30 bg-accent/30 text-sm text-foreground placeholder:text-muted-foreground"
+                placeholder="Chat name"
+                className="h-11 rounded-xl border-border/40 bg-accent/20 text-sm text-foreground placeholder:text-muted-foreground"
                 onKeyDown={(e) => e.key === "Enter" && handleRename()}
                 autoFocus />
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-1">
                 <button onClick={() => setIsRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors">Cancel</button>
                 <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-opacity">Save</button>
               </div>
