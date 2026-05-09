@@ -220,6 +220,7 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
   const [previewCode, setPreviewCode] = useState<{ code: string; lang: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectTextOpen, setSelectTextOpen] = useState(false);
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userBubbleRef = useRef<HTMLDivElement>(null);
 
