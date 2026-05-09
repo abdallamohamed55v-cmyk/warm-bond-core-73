@@ -1244,10 +1244,10 @@ Ask me anything to get started!`;
                 <Globe className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
                 <span className="flex-1 text-[13.5px] text-foreground/85">Web search</span>
                 <div
-                  className="relative shrink-0 rounded-[16px] transition-colors duration-200 ease-out"
+                  className="relative shrink-0 rounded-full transition-colors duration-200 ease-out"
                   style={{
-                    width: 51,
-                    height: 31,
+                    width: 40,
+                    height: 24,
                     backgroundColor: searchEnabled ? "#34C759" : "#e9e9eb",
                   }}
                 >
@@ -1256,10 +1256,10 @@ Ask me anything to get started!`;
                     transition={iosSpring}
                     className="absolute top-1/2 rounded-full bg-white"
                     style={{
-                      width: 27,
-                      height: 27,
-                      marginTop: -13.5,
-                      left: searchEnabled ? 22 : 2,
+                      width: 20,
+                      height: 20,
+                      marginTop: -10,
+                      left: searchEnabled ? 18 : 2,
                       boxShadow:
                         "0px 3px 8px rgba(0,0,0,0.15), 0px 3px 1px rgba(0,0,0,0.06)",
                     }}
