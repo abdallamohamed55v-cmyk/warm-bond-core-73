@@ -1476,17 +1476,35 @@ async function handleToolCalls(
 
         if (imageData?.images) {
           imageData.images.slice(0, isDeepResearch ? 4 : 3).forEach((img: any) => {
-            if (img.imageUrl) allImages.add(img.imageUrl);
+            if (img.imageUrl) {
+              allImages.add(img.imageUrl);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                event: "image_found",
+                url: img.imageUrl,
+                caption: img.title || img.source || searchQuery,
+                query: searchQuery,
+              })}\n\n`));
+            }
           });
+        }
+
+        // Emit unique source domains so the UI can render chips under the search step
+        const domains = Array.from(new Set(
+          (searchData.organic || [])
+            .map((r: any) => extractDomain(r?.link || ""))
+            .filter((d: string) => d.length > 0)
+        )).slice(0, 6);
+        if (domains.length > 0) {
+          emitTaskPatch(searchTaskId, { domains });
         }
 
         const organicCount = searchData.organic?.length || 0;
         pushStatus(organicCount > 0 ? (isDeepResearch ? "Reviewing the sources..." : "Reviewing the results...") : "Search completed");
         allSearchResults.push(context);
+        emitTaskDone(searchTaskId, `${organicCount} result${organicCount === 1 ? "" : "s"}${domains.length ? ` from ${domains.slice(0, 3).join(", ")}` : ""}`);
         if (isDeepResearch) {
           (searchData.organic || []).forEach((r: any) => { if (r?.link) researchSourcesSet.add(r.link); });
           researchChannels.add("Web");
-          emitTaskDone(searchTaskId, `${organicCount} results`);
         }
 
         // ── Deep Research enrichment: layer multiple free open sources in parallel.
