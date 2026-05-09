@@ -36,6 +36,13 @@ interface ChatMessageProps {
   senderAvatar?: string | null;
   isOtherMember?: boolean;
   bubbleColor?: { bg: string; text: string } | null;
+  messageId?: string;
+  reactions?: { id: string; emoji: string; user_id: string }[];
+  onToggleReaction?: (messageId: string, emoji: string) => void;
+  currentUserId?: string;
+  usersById?: Record<string, { name?: string; avatar?: string }>;
+  readers?: { user_id: string; name?: string; avatar?: string }[];
+  showReaders?: boolean;
 }
 
 const getDomain = (url: string) => {
@@ -265,7 +272,99 @@ const SelectTextModal = ({ open, onClose, text, onCopy }: { open: boolean; onClo
   </AnimatePresence>
 );
 
-const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, senderName, senderAvatar, isOtherMember, bubbleColor }: ChatMessageProps) => {
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+
+const ReactionsRow = ({ reactions, currentUserId, onToggle, messageId, align }: { reactions: { id: string; emoji: string; user_id: string }[]; currentUserId?: string; onToggle?: (id: string, emoji: string) => void; messageId?: string; align: "left" | "right" }) => {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const grouped = useMemo(() => {
+    const map: Record<string, { count: number; mine: boolean }> = {};
+    for (const r of reactions) {
+      if (!map[r.emoji]) map[r.emoji] = { count: 0, mine: false };
+      map[r.emoji].count++;
+      if (r.user_id === currentUserId) map[r.emoji].mine = true;
+    }
+    return Object.entries(map);
+  }, [reactions, currentUserId]);
+  if (!messageId || !onToggle) return null;
+  if (grouped.length === 0) return null;
+  return (
+    <div className={`flex items-center gap-1 mt-1 flex-wrap ${align === "right" ? "justify-end" : "justify-start"}`}>
+      {grouped.map(([emoji, { count, mine }]) => (
+        <button
+          key={emoji}
+          onClick={() => onToggle(messageId, emoji)}
+          className={`px-2 py-0.5 rounded-full text-[12px] flex items-center gap-1 border transition-colors ${mine ? "bg-primary/15 border-primary/40 text-foreground" : "bg-accent/30 border-border/30 text-foreground/80 hover:bg-accent/50"}`}
+        >
+          <span>{emoji}</span>
+          <span className="text-[11px] font-medium">{count}</span>
+        </button>
+      ))}
+      <div className="relative">
+        <button
+          onClick={() => setPickerOpen((v) => !v)}
+          className="px-1.5 py-0.5 rounded-full text-[13px] bg-accent/20 hover:bg-accent/40 border border-border/30 text-foreground/60 transition-colors"
+          aria-label="Add reaction"
+        >＋</button>
+        <AnimatePresence>
+          {pickerOpen && (
+            <>
+              <button className="fixed inset-0 z-40 cursor-default" onClick={() => setPickerOpen(false)} aria-label="Close" />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className={`absolute z-50 ${align === "right" ? "right-0" : "left-0"} bottom-full mb-1 flex gap-1 p-1.5 rounded-2xl liquid-glass border border-border/30 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.35)]`}
+              >
+                {REACTION_EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => { onToggle(messageId, e); setPickerOpen(false); }}
+                    className="w-8 h-8 rounded-full hover:bg-accent/50 flex items-center justify-center text-[18px] transition-colors"
+                  >{e}</button>
+                ))}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+const ReadersRow = ({ readers, align }: { readers: { user_id: string; name?: string; avatar?: string }[]; align: "left" | "right" }) => {
+  if (!readers.length) return null;
+  return (
+    <div className={`flex items-center gap-1 mt-1 ${align === "right" ? "justify-end" : "justify-start"}`}>
+      <span className="text-[10px] text-muted-foreground mr-1">Seen by</span>
+      <div className="flex -space-x-1.5">
+        {readers.slice(0, 4).map((r) => (
+          r.avatar ? (
+            <img key={r.user_id} src={r.avatar} alt={r.name || ""} title={r.name || ""} className="w-4 h-4 rounded-full border border-background object-cover" />
+          ) : (
+            <div key={r.user_id} title={r.name || ""} className="w-4 h-4 rounded-full border border-background bg-accent flex items-center justify-center text-[8px] font-bold text-foreground/70">
+              {(r.name || "?")[0]?.toUpperCase()}
+            </div>
+          )
+        ))}
+        {readers.length > 4 && <span className="text-[10px] text-muted-foreground ml-1">+{readers.length - 4}</span>}
+      </div>
+    </div>
+  );
+};
+
+const renderTextWithMentions = (text: string) => {
+  const parts = text.split(/(@[A-Za-z0-9_]+)/g);
+  return parts.map((p, i) =>
+    p.startsWith("@") ? (
+      <span key={i} className="px-1 rounded bg-white/25 font-semibold">{p}</span>
+    ) : (
+      <span key={i}>{p}</span>
+    )
+  );
+};
+
+const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, senderName, senderAvatar, isOtherMember, bubbleColor, messageId, reactions, onToggleReaction, currentUserId, readers, showReaders }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState<{ code: string; lang: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -456,10 +555,12 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
               background: "var(--user-bubble, #2563eb)",
               color: "var(--user-bubble-text, #ffffff)",
             }}
-            className="px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text"
+            className="px-4 py-2.5 rounded-3xl rounded-br-lg text-[0.9375rem] leading-relaxed select-text whitespace-pre-wrap break-words"
           >
-            {content}
+            {renderTextWithMentions(content)}
           </div>
+          <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align={isOtherMember ? "left" : "right"} />
+          {showReaders && <ReadersRow readers={readers || []} align={isOtherMember ? "left" : "right"} />}
 
           <AnimatePresence>
             {menuOpen && (
@@ -647,6 +748,9 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
                 </button>
               )}
             </div>
+          )}
+          {!isStreaming && content && (
+            <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align="left" />
           )}
         </>
       )}

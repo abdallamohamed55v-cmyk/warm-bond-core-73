@@ -412,6 +412,25 @@ const ChatPage = () => {
           const next = [...prev]; next[idx] = { ...next[idx], id: insertedId, user_id: chatUserId || undefined }; return next;
         });
       }
+      // Notify mentioned members
+      if (members.length > 0 && userInput) {
+        const mentions = Array.from(new Set((userInput.match(/@([A-Za-z0-9_]+)/g) || []).map((m) => m.slice(1).toLowerCase())));
+        if (mentions.length > 0) {
+          for (const mb of members) {
+            if (!mb.name || mb.id === chatUserId) continue;
+            const safe = mb.name.replace(/\s+/g, "_").toLowerCase();
+            if (mentions.includes(safe)) {
+              await supabase.rpc("create_notification" as any, {
+                p_user_id: mb.id,
+                p_type: "mention",
+                p_title: `${userName || "Someone"} mentioned you`,
+                p_message: userInput.slice(0, 140),
+                p_metadata: { conversation_id: resolvedConversationId },
+              });
+            }
+          }
+        }
+      }
     });
 
     // Broadcast that AI is now busy in this conversation
@@ -1468,6 +1487,12 @@ Ask me anything to get started!`;
                     senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
                     isOtherMember={isOther}
                     bubbleColor={isOther ? colorForUser(msg.user_id!) : null}
+                    messageId={msg.id}
+                    currentUserId={chatUserId || undefined}
+                    reactions={msg.id ? messageReactions[msg.id] : undefined}
+                    onToggleReaction={msg.id ? toggleReaction : undefined}
+                    readers={msg.id ? (messageReads[msg.id] || []).filter((r) => r.user_id !== chatUserId).map((r) => ({ user_id: r.user_id, name: memberMap[r.user_id]?.name, avatar: memberMap[r.user_id]?.avatar })) : []}
+                    showReaders={members.length > 0 && msg.role === "user" && msg.user_id === chatUserId && i === messages.length - 1 - (messages[messages.length - 1]?.role === "assistant" ? 1 : 0)}
                   />
                 </motion.div>
                 );
