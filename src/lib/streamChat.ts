@@ -18,6 +18,7 @@ export async function streamChat({
   deepResearch,
   chatMode,
   user_id,
+  conversation_id,
   computerUseEnabled,
   activeAgent,
   selectedModel,
