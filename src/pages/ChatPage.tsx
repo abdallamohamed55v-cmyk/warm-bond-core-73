@@ -623,10 +623,12 @@ const ChatPage = () => {
       onProducts: (products) => {
         streamedProducts = products;
         setMessages((prev) => {
-          const last = prev[prev.length - 1];
+          const assistantIndex = prev.findIndex((m) => m.clientId === `assistant-${localTurnId}`);
+          const targetIndex = assistantIndex >= 0 ? assistantIndex : prev.length - 1;
+          const last = prev[targetIndex];
           if (last?.role !== "assistant") return prev;
           const next = prev.slice();
-          next[next.length - 1] = { ...last, products };
+          next[targetIndex] = { ...last, products };
           return next;
         });
       },
@@ -709,10 +711,12 @@ const ChatPage = () => {
           const aId = await saveMessage(resolvedConversationId, "assistant", assistantContent, searchImages.length > 0 ? searchImages : undefined);
           if (aId) ownInsertedIdsRef.current.add(aId);
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
+            const assistantIndex = prev.findIndex((m) => m.clientId === `assistant-${localTurnId}`);
+            const targetIndex = assistantIndex >= 0 ? assistantIndex : prev.length - 1;
+            const last = prev[targetIndex];
             if (last?.role !== "assistant") return prev;
             const next = prev.slice();
-            next[next.length - 1] = {
+            next[targetIndex] = {
               ...last,
               id: aId || last.id,
               images: searchImages.length > 0 ? searchImages : last.images,
