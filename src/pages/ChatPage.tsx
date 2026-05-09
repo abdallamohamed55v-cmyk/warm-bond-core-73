@@ -46,6 +46,7 @@ import { Input } from "@/components/ui/input";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  clientId?: string;
   images?: string[];
   products?: ProductResult[];
   attachedImages?: string[];
@@ -438,9 +439,11 @@ const ChatPage = () => {
 
     const imageAttachments = attachedFiles.filter((f) => f.type === "image");
     const fileAttachments = attachedFiles.filter((f) => f.type === "file");
+    const localTurnId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 
     const userMsg: Message = {
       role: "user",
+      clientId: `user-${localTurnId}`,
       content: text || (attachedFiles.length > 0 ? `[${attachedFiles.length} file(s) attached]` : ""),
       attachedImages: imageAttachments.map((f) => f.data),
       attachedFiles: fileAttachments.map((f) => ({ name: f.name, type: f.type }))
@@ -451,7 +454,7 @@ const ChatPage = () => {
         base = [...prev];
         base.splice(editingIndex, base[editingIndex + 1]?.role === "assistant" ? 2 : 1);
       }
-      return [...base, userMsg, { role: "assistant", content: "" }];
+      return [...base, userMsg, { role: "assistant", content: "", clientId: `assistant-${localTurnId}` }];
     });
     if (editingIndex !== null) { setEditingIndex(null); setEditingOriginal(""); }
     const userInput = text;
