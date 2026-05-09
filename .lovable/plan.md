@@ -1,190 +1,90 @@
-# Megsy Deep Research v2 — خطة شاملة
+# خطة: أداة Fetch URL + نظام Skills (مهارات)
 
-## الهدف
-1. نقل زر **Deep Research** فوق صندوق الإدخال مباشرة (toggle سريع).
-2. بناء نظام بحث عميق متطور: أسئلة استيضاحية ذكية + خطة تفصيلية + ستريمنغ حيّ لما يفعله النموذج لحظيًا + تقرير ختامي مختصر.
-3. استخدام مكوّن **Task Timeline** (نسخة محلية من ai-elements/task) لعرض السجل الحي.
+## الجزء 1 — أداة Fetch URL
 
----
+أداة جديدة تسمح للـ AI بفتح رابط محدد، استخراج محتواه (markdown + عنوان + ميتا) واستخدامه في الإجابة. مختلفة عن `WEB_SEARCH` (بحث عام) و`BROWSE_WEBSITE` (تصفح تفاعلي بمتصفح حقيقي عبر HB) — هذه أخف وأسرع وللـ "اقرأ هذه الصفحة وحدّثني".
 
-## 1) واجهة المستخدم — تغييرات الـ Frontend
+### Backend (`supabase/functions/chat/index.ts`)
+- إضافة اسم أداة جديد `FETCH_URL` للـ `INTERNAL_TOOLS` set ولقائمة الأدوات المعرّفة في الـ tools array بـ schema:
+  - `url` (string, required)
+  - `extract` (enum: `summary | full | metadata`, default `summary`)
+- handler ينفذ fetch مباشر للصفحة، يستخدم Readability البسيط (regex/strip tags) لاستخراج النص + العنوان + الـ description، ويرجع للـ AI نص نظيف مقصوص (~6000 حرف). لو URL غير صالح يرجع رسالة خطأ نظيفة بدون فتح Composio flow.
+- تحديث الـ system prompt في الأماكن اللي بتذكر الأدوات تضيف وصف لـ `FETCH_URL`: "use when the user provides a specific URL to read or summarize."
 
-### (أ) زر Deep Research فوق Composer
-- إضافة Pill toggle بسيط فوق `BottomInputBar` مباشرة (نفس مكان "Mode badge"):
-  - أيقونة `Globe` + نص "Deep Research" + Switch صغير.
-  - عند التفعيل: `setChatMode("deep-research")` + لون بنفسجي (`text-violet-400`).
-  - عند الإلغاء: يرجع لـ `normal`.
-- بجانبه pill ثانٍ اختياري: **Computer Use** (للحفاظ على نفس النمط البصري).
-- إخفاء Deep Research من قائمة الـ Agents (لأنه أصبح وصول مباشر).
+### Frontend (Plus Sheet)
+- إضافة Row جديد في `ChatPlusSheet` تحت "Web search" اسمه "Fetch URL" بأيقونة `Link2`. الضغط عليها يفتح حوار صغير (input + زر Send) والنتيجة تنحقن في الرسالة كـ `[Fetch URL: <url>]` عشان الـ AI يستدعي الأداة. أو ببساطة: زر Toggle مماثل لـ Web search اسمه "Auto-read links" لو الـ user حطّ رابط في رسالته يقرأه تلقائياً.
 
-### (ب) مكوّن `ResearchTaskTimeline` (جديد)
-- ملف جديد: `src/components/research/ResearchTaskTimeline.tsx`.
-- يحاكي الـ `Task` component من ai-elements (بدون npm dep — نبنيه بأنفسنا بـ Tailwind + framer-motion).
-- يحتوي على:
-  - **TaskTrigger**: عنوان قابل للطي (Collapsible) — مثلاً "Researching… 12 sources scanned".
-  - **TaskContent**: قائمة `TaskItem` متحركة (slide-in من اليسار).
-  - **TaskItemFile**: chip صغير يحمل أيقونة (Search/FileText/Globe/Brain) + اسم المصدر/الاستعلام.
-- أمثلة على عناصر:
-  ```
-  🔍 Searching "GPT-5 benchmarks vs Claude 4"
-  📖 Reading [openai.com/blog/gpt-5]
-  🧠 Analyzing 8 sources for patterns
-  🌐 Cross-checking with arXiv: "transformer scaling laws"
-  ✅ Synthesizing findings
-  ```
-- Auto-scroll لآخر مهمة + حالة `running | done | error` لكل عنصر.
+## الجزء 2 — نظام Skills (مهارات)
 
-### (ج) مكوّن `ResearchPlanCard` (جديد)
-- يظهر فور انتهاء مرحلة التخطيط، قبل بدء التنفيذ.
-- بطاقة بنفسجية بـ:
-  - **العنوان**: "Research Plan"
-  - **الهدف**: ملخص سؤال المستخدم بصيغة بحثية.
-  - **الخطوات** (مرقّمة 1→N): مثل
-    1. Define core terms and scope
-    2. Gather primary sources (academic + news)
-    3. Cross-reference with expert commentary
-    4. Identify counter-arguments and limitations
-    5. Synthesize into structured report
-  - **زر**: "Approve & Start" / "Refine Plan" (اختياري — افتراضي auto-start بعد 2 ثانية).
+### المفهوم
+المهارة = (اسم + وصف + تعليمات system + أدوات مفعّلة + موديل مفضّل اختياري). المستخدم يقدر:
+- يختار مهارة معينة من زر `+` في الـ Plus Sheet (تظهر chip فوق الـ input، ويتم حقن تعليماتها وموديلها وأدواتها لكل رسالة).
+- أو يخليها على Auto: الـ AI يقرأ list المهارات (الاسم + الوصف فقط) وكل turn يقرر بنفسه أيها يطبّق (عبر تعليمة في system prompt).
 
-### (د) مكوّن `ClarifyDialog` (جديد)
-- يظهر فقط حين يقرر النموذج أن السؤال غامض (≤30% من الحالات).
-- بطاقة فوق الـ Composer بـ 1-3 أسئلة استيضاحية ذكية:
-  - إما اختيارات زر سريعة (chips)
-  - أو حقل إجابة قصيرة
-- زر "Skip & let Megsy decide" متاح دائمًا.
-- بعد الإجابة → يُحقن السياق ويبدأ التخطيط.
+### قاعدة البيانات (migration جديدة)
 
-### (هـ) مكوّن `ResearchSummaryCard` (جديد)
-- يظهر بعد انتهاء البحث، فوق التقرير الكامل (`DeepResearchCard` الحالي).
-- يحتوي:
-  - **What I did**: 4-6 نقاط مختصرة (مثل "بحثت في 23 مصدرًا، قرأت 8 مقالات كاملة، قارنت 3 وجهات نظر متضاربة").
-  - **Key findings**: 3 نقاط جوهرية.
-  - **Sources scanned**: عدد + أيقونات قنوات (Web/Academic/News/Reddit).
-  - **Time taken**: مدة التنفيذ.
-  - **Confidence**: مرتفع/متوسط/منخفض مع تبرير سطري.
+**جدول `skills`** (مهارات المستخدم):
+- `id`, `user_id` (auth.users), `name`, `description`, `instructions` (text)
+- `enabled_tools` (text[]) — أسماء أدوات من القائمة الموجودة
+- `preferred_model` (text, nullable)
+- `icon` (text, nullable) — اسم أيقونة lucide
+- `is_active` (bool, default true)
+- `created_at`, `updated_at`
+- RLS: المستخدم يدير صفوفه فقط
 
----
+**جدول `system_skills`** (مكتبة جاهزة من النظام، read-only للمستخدم):
+- نفس الأعمدة بدون `user_id`، + `display_order`, `is_active`
+- RLS: SELECT للجميع، التعديل service_role فقط
+- seed: مبرمج، باحث، كاتب محتوى، مترجم، ملخّص دراسي، مستشار تسويق… (5–8 مهارات افتراضية)
 
-## 2) الـ Backend — أحداث SSE جديدة في `supabase/functions/chat/index.ts`
+**جدول `user_skill_preferences`** (لتتبع المهارات الجاهزة المضافة من المستخدم):
+- `user_id`, `system_skill_id`, `is_pinned` — أو ببساطة نسمح للمستخدم يعمل "نسخ" من system skill إلى skills الخاصة به.
 
-سنوسّع تدفق الأحداث (data: lines) بأنواع جديدة:
+### صفحة الإعدادات
+- Route جديد `/settings/skills` (يضاف لـ `SettingsPage.tsx` تحت قائمة الـ Workspace items بعنوان "Skills" وأيقونة `Sparkles`).
+- صفحة بـ tab علوي: "Mine" / "Library":
+  - **Library**: عرض system_skills كبطاقات + زر "Add to mine" ينسخها لجدول skills الخاص بالمستخدم.
+  - **Mine**: list مهارات المستخدم مع زر تعديل/حذف، وزر "+ New skill" يفتح فورم (الاسم، الوصف، التعليمات textarea، multi-select للأدوات المتاحة من thawابت معرّفة في `src/lib/skillTools.ts`، dropdown للموديل المفضل).
 
-| Event | Payload | متى يُرسَل |
-|---|---|---|
-| `clarify_questions` | `{ questions: [{id, text, options?}] }` | إذا اعتبر النموذج السؤال غامضًا |
-| `plan_detailed` | `{ goal, steps: string[] }` | بعد مرحلة التخطيط |
-| `task_start` | `{ id, kind, label, target? }` | عند بدء كل مهمة فرعية |
-| `task_update` | `{ id, label }` | تحديث حالة |
-| `task_done` | `{ id, summary?, error? }` | عند انتهاء مهمة |
-| `final_summary` | `{ what_i_did, key_findings, sources_count, channels, duration_ms, confidence }` | قبل التقرير النهائي |
+### اختيار المهارة في الشات
 
-(الـ events الحالية `plan` و `search_query` تبقى للتوافق الخلفي.)
+**state في `ChatPage.tsx`**:
+- `activeSkill: Skill | null` يُخزن في `localStorage` مع conversation_id (يستمر للجلسة).
+- `skillMode: "auto" | "manual"` — افتراضي auto.
 
----
+**في `ChatPlusSheet.tsx`**: Row جديد "Skills" قبل "Integrations" بأيقونة `Sparkles`. الضغط يفتح Sheet ثاني صغير (`SkillsPickerSheet`) فيه:
+- خيار "Auto" (الـ AI يقرر) — ✓ افتراضي.
+- list مهارات المستخدم + المضافة من الـ library.
+- زر "Manage skills →" يفتح `/settings/skills`.
 
-## 3) خوارزمية الـ Deep Research v2 (تعديل `chat/index.ts`)
+**عند اختيار مهارة**: تظهر chip ملوّنة فوق الـ input (شبيه `AgentBadge`) فيها اسم المهارة + × لإزالتها (يرجع للـ Auto).
 
-عند `isDeepResearch === true` نُفعّل **DeepResearchOrchestrator** بدل التدفق الحالي:
+### تمرير المهارة للـ Backend
 
-```text
-المرحلة 1: Classifier (gemini-2.5-flash-lite — رخيص)
-   → ambiguity_score (0-1), domain (tech/medical/finance/general/...)
-   → إذا score > 0.55 وليست أول رسالة بسياق → أرسل clarify_questions ووقّف
-   → غير ذلك → كمل
+**`streamChat.ts`**: إضافة بارامتر `activeSkill?: { id, name, instructions, enabled_tools, preferred_model }` و`availableSkills?: Array<{ name, description }>` (للـ Auto mode).
 
-المرحلة 2: Planner (gemini-2.5-flash + JSON mode)
-   → ينتج خطة { goal, sub_questions: 5-8, search_strategies: [...], expected_sources: [...] }
-   → أرسل plan_detailed event
+**في `supabase/functions/chat/index.ts`**:
+- لو `activeSkill` موجود:
+  - يُحقن `activeSkill.instructions` في بداية الـ system prompt تحت قسم `<active_skill>`.
+  - الـ tools المعرّفة في request تُفلتر/تُمنح أولوية لـ `enabled_tools`.
+  - `preferred_model` يتجاوز اختيار الموديل العادي (مع نفس fallback logic الموجود).
+- لو لا يوجد `activeSkill` و`availableSkills.length > 0`:
+  - يُضاف قسم في system prompt: "Available skills you may apply when relevant:" + bullets لكل (name — description). وتعليمات: "Silently apply the matching skill's tone/expertise; never name it to the user."
 
-المرحلة 3: Executor (متوازي — 3 workers)
-   لكل sub_question:
-      a. WEB_SEARCH (Serper)        → task_start/done
-      b. JINA_READ على top 2 URLs   → task_start/done
-      c. Wikipedia (موجود)          → task_start/done
-      d. arXiv (للمواضيع التقنية)   → task_start/done
-      e. Reddit/HN (للآراء)         → task_start/done
-   كل tool ينتج task event مع label واضح بلغة المستخدم.
+## التقنيات
+- React Query لجلب الـ skills في صفحة الإعدادات.
+- Zod validation للفورم.
+- Hook جديد `useSkills.ts` يرجع `mySkills`, `librarySkills`, `activeSkill`, `setActiveSkill`.
+- ملف `src/lib/skillTools.ts` فيه قائمة الأدوات المتاحة للاختيار (WEB_SEARCH, BROWSE_WEBSITE, FETCH_URL, GENERATE_IMAGE, …) بأسماء عرض عربية.
 
-المرحلة 4: Reflector (kimi-k2.5 أو claude-sonnet-4.5)
-   → يفحص النتائج
-   → يقرر: هل هناك فجوات؟ → ينتج 2-3 follow-up queries
-   → يعيد المرحلة 3 (depth max=2)
-
-المرحلة 5: Synthesizer (kimi-k2.5:nitro)
-   → يبني تقرير منظم Markdown مع citations [n]
-   → streaming عادي عبر choices.delta
-
-المرحلة 6: Summarizer (gemini-2.5-flash — سريع وموازي للتقرير)
-   → final_summary event قبل بدء التقرير الفعلي
-```
-
-### مفاتيح التحسين
-- **Parallelism**: استخدام `Promise.all` لتشغيل 3-5 بحوث متزامنة لكل sub-question.
-- **Token budget**: حد أقصى 12k token output، 25k context.
-- **Source dedup**: hash عناوين URLs لمنع التكرار.
-- **Citations**: كل ادعاء في التقرير يربط بـ `[n]` يحيل لمصدر URL.
-- **Cost guard**: لـ Megsy Lite users → max 2 sub-questions، depth=1. Pro/Max → 8 sub-questions، depth=2.
-
----
-
-## 4) ربط الأحداث في `streamChat.ts`
-- توسيع `onEvent` ليتعامل مع الأنواع الجديدة (موجود أصلاً، نمرّر payload كما هو).
-- إضافة callbacks اختيارية مكرّسة:
-  - `onClarifyQuestions(qs)`
-  - `onPlan(plan)`
-  - `onTask(task)` (start/update/done)
-  - `onSummary(summary)`
-
----
-
-## 5) ربط الـ State في `ChatPage.tsx`
-- state جديد:
-  - `researchClarify: { questions, messageId } | null`
-  - `researchPlan: { goal, steps, messageId } | null`
-  - `researchTasks: Map<messageId, Task[]>`
-  - `researchSummary: Map<messageId, Summary>`
-- الرسالة الـassistant الحالية تتلقى الـ render حسب الترتيب:
-  1. ClarifyDialog (إن وُجد) → ينتظر إجابة المستخدم
-  2. ResearchPlanCard
-  3. ResearchTaskTimeline (live)
-  4. ResearchSummaryCard
-  5. DeepResearchCard (التقرير الكامل — موجود)
-
----
-
-## 6) أمان وتكاليف
-- Deep Research v2 يكلّف ~5-10x من رد عادي → نخصم credits أعلى (نُحدث `deduct-credits` لتقبل `action_type: "deep_research"`).
-- Rate limit: max 1 deep-research نشط لكل مستخدم في وقت واحد.
-- Timeout كلي: 90 ثانية (بدل 60 الحالي).
-
----
-
-## ملفات سيتم إنشاؤها/تعديلها
-**جديدة**:
-- `src/components/research/ResearchTaskTimeline.tsx`
-- `src/components/research/ResearchPlanCard.tsx`
-- `src/components/research/ResearchSummaryCard.tsx`
-- `src/components/research/ClarifyDialog.tsx`
-- `src/components/research/DeepResearchToggle.tsx` (الزر فوق الـcomposer)
-
-**تعديلات**:
-- `src/pages/ChatPage.tsx` — state + render + DeepResearchToggle
-- `src/components/ChatMessage.tsx` — render مكوّنات البحث في رسائل المساعد
-- `src/lib/streamChat.ts` — callbacks جديدة
-- `supabase/functions/chat/index.ts` — DeepResearchOrchestrator (مرحلة Classifier→Planner→Executor→Reflector→Synthesizer→Summarizer)
-
----
+## الملفات المتأثرة
+- جديدة: `src/pages/SkillsSettingsPage.tsx`, `src/components/chat/SkillsPickerSheet.tsx`, `src/components/SkillBadge.tsx`, `src/hooks/useSkills.ts`, `src/lib/skillTools.ts`, migration SQL.
+- معدّلة: `src/pages/ChatPage.tsx`, `src/components/chat/ChatPlusSheet.tsx`, `src/lib/streamChat.ts`, `src/pages/SettingsPage.tsx`, `src/App.tsx` (route), `supabase/functions/chat/index.ts`.
 
 ## ترتيب التنفيذ
-1. مكوّنات الـ UI الأربعة + DeepResearchToggle (بدون منطق backend بعد — mock)
-2. توسيع SSE events في `chat/index.ts` (plan/task/summary)
-3. كتابة DeepResearchOrchestrator الكامل
-4. ربط الـ state والـ events في ChatPage
-5. اختبار end-to-end على سؤال معقد (مثل "قارن GPT-5 vs Claude 4 vs Gemini 3")
-6. ضبط التكاليف والـ rate limits
-
----
-
-## ملاحظة على المكتبة الـpaste
-الكود اللي بعتّه (`@icons-pack/react-simple-icons` + `@/components/ai-elements/task` + `nanoid`) من Vercel AI Elements — هذه المكتبة غير مثبتة في المشروع وتحتاج تبعيات إضافية. **الحل**: نبني نسخة محلية بنفس الـ API والـ visual style باستخدام `lucide-react` (موجود) + `framer-motion` (موجود) + `crypto.randomUUID()` (بدون nanoid). نفس النتيجة البصرية بدون dependencies جديدة.
+1. Migration للجداول الثلاثة + seed system_skills.
+2. Backend: أداة `FETCH_URL` + استقبال `activeSkill`/`availableSkills`.
+3. Hook + صفحة الإعدادات `/settings/skills` (CRUD + Library).
+4. SkillsPickerSheet + Row جديد في ChatPlusSheet + chip في ChatPage.
+5. تمرير الـ skill في `streamChat`.
+6. تجربة كاملة على preview.
