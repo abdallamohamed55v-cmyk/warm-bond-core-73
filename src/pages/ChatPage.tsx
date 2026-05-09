@@ -16,6 +16,7 @@ import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
 import DeepResearchToggle from "@/components/research/DeepResearchToggle";
+import AnimatedHeadline from "@/components/research/AnimatedHeadline";
 import ClarifyDialog, { type ClarifyQuestion } from "@/components/research/ClarifyDialog";
 import type { ResearchTask } from "@/components/research/ResearchTaskTimeline";
 import type { ResearchPlan } from "@/components/research/ResearchPlanCard";
