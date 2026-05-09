@@ -535,14 +535,16 @@ const ChatPage = () => {
       assistantRenderTimer = null;
       const nextContent = assistantContent;
       setMessages((prev) => {
-        const last = prev[prev.length - 1];
+        const assistantIndex = prev.findIndex((m) => m.clientId === `assistant-${localTurnId}`);
+        const targetIndex = assistantIndex >= 0 ? assistantIndex : prev.length - 1;
+        const last = prev[targetIndex];
         if (last?.role === "assistant") {
-          if (last.content === nextContent && (last.products || EMPTY_REACTIONS) === (last.products ? last.products : streamedProducts)) return prev;
+          if (last.content === nextContent && (last.products || streamedProducts) === (last.products ? last.products : streamedProducts)) return prev;
           const next = prev.slice();
-          next[next.length - 1] = { ...last, content: nextContent, products: last.products ?? streamedProducts };
+          next[targetIndex] = { ...last, content: nextContent, products: last.products ?? streamedProducts };
           return next;
         }
-        return [...prev, { role: "assistant", content: nextContent, products: streamedProducts }];
+        return [...prev, { role: "assistant", content: nextContent, products: streamedProducts, clientId: `assistant-${localTurnId}` }];
       });
     };
 
