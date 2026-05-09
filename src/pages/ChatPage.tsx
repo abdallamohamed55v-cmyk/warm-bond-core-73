@@ -16,6 +16,7 @@ import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
 import DeepResearchToggle from "@/components/research/DeepResearchToggle";
+import AnimatedHeadline from "@/components/research/AnimatedHeadline";
 import ClarifyDialog, { type ClarifyQuestion } from "@/components/research/ClarifyDialog";
 import type { ResearchTask } from "@/components/research/ResearchTaskTimeline";
 import type { ResearchPlan } from "@/components/research/ResearchPlanCard";
@@ -1582,14 +1583,13 @@ Ask me anything to get started!`;
                 transition={{ type: "spring", stiffness: 220, damping: 20 }}
                 className="relative inline-flex items-center gap-3"
               >
-                <div className="absolute inset-0 -m-8 rounded-full bg-blue-500/15 blur-2xl animate-pulse" />
-                <PegtopIcon className="relative w-9 h-9 md:w-10 md:h-10 text-blue-500 drop-shadow-[0_0_18px_rgba(59,130,246,0.7)]" />
-                <h1 className="relative text-[28px] md:text-[36px] leading-none tracking-tight font-extrabold text-foreground">
-                  Create{" "}
-                  <Highlighter action="underline" color="#3B82F6" strokeWidth={2.5} animationDuration={1400}>
-                    <span className="text-blue-500">something</span>
-                  </Highlighter>
-                </h1>
+                <div className={`absolute inset-0 -m-8 rounded-full blur-2xl animate-pulse ${chatMode === "deep-research" ? "bg-violet-500/20" : "bg-blue-500/15"}`} />
+                <PegtopIcon className={`relative w-9 h-9 md:w-10 md:h-10 ${chatMode === "deep-research" ? "text-violet-500 drop-shadow-[0_0_18px_rgba(139,92,246,0.7)]" : "text-blue-500 drop-shadow-[0_0_18px_rgba(59,130,246,0.7)]"}`} />
+                <AnimatedHeadline
+                  text={chatMode === "deep-research" ? "Research" : "Create"}
+                  highlight={chatMode === "deep-research" ? "deeply" : "something"}
+                  highlightColor={chatMode === "deep-research" ? "#8B5CF6" : "#3B82F6"}
+                />
               </motion.div>
             </div>
           ) : (
