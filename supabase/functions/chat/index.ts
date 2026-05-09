@@ -492,14 +492,20 @@ serve(async (req) => {
     const effectiveTier: MegsyTier = resolveTier(requestedTier ?? userPersonalization?.preferred_tier, userPlan);
     // If caller passed an explicit raw model ID, honor it; otherwise pick from tier.
     let modelId: string = requestedModel ?? pickModelForTier(effectiveTier, needsComplexModel);
-    let apiUrl = OPENROUTER_URL;
+    let apiUrl = LOVABLE_URL;
     let apiKey = "";
     let usedKeyId: string | null = null;
-    let provider: "openrouter" | "lemondata" = "openrouter";
+    let provider: "openrouter" | "lemondata" | "lovable" = "lovable";
 
-    // Try OpenRouter first (env secret)
+    // Try Lovable AI Gateway first (preferred for testing)
+    const lovKey = getLovableKey();
     const orKey = getOpenRouterKey();
-    if (orKey) {
+    if (lovKey) {
+      apiUrl = LOVABLE_URL;
+      apiKey = lovKey;
+      provider = "lovable";
+    } else if (orKey) {
+      apiUrl = OPENROUTER_URL;
       apiKey = orKey;
       provider = "openrouter";
     } else {
