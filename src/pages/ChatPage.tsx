@@ -171,10 +171,18 @@ const ChatPage = () => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
       setChatUserId(user.id);
-      const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+      const { data: profile } = await supabase.from("profiles").select("display_name, plan").eq("id", user.id).maybeSingle();
       const name = (profile as any)?.display_name || (user.user_metadata?.full_name as string) || (user.email?.split("@")[0] ?? "");
       const firstName = (name || "").split(/\s+/)[0];
       setUserName(firstName);
+      setUserPlan((profile as any)?.plan || "free");
+      // Pull preferred tier from personalization
+      const { data: pers } = await supabase.from("ai_personalization").select("preferred_tier").eq("user_id", user.id).maybeSingle();
+      const prefTier = (pers as any)?.preferred_tier;
+      if (prefTier && ["lite", "pro", "max"].includes(prefTier)) {
+        setMegsyTier(prefTier as any);
+        localStorage.setItem("megsy_tier", prefTier);
+      }
     });
   }, []);
 
