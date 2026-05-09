@@ -1689,6 +1689,16 @@ Ask me anything to get started!`;
                       })}
                   </motion.div>
                 )}
+                {editingIndex !== null && (
+                  <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-2xl liquid-glass border border-border/30">
+                    <Pencil className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="text-[12px] text-foreground/80 flex-1 truncate">Editing message</span>
+                    <button
+                      onClick={cancelEdit}
+                      className="text-[11px] font-medium text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md hover:bg-accent/40 transition-colors"
+                    >Cancel</button>
+                  </div>
+                )}
                 <AnimatedInput
                   value={input}
                   onChange={setInput}
