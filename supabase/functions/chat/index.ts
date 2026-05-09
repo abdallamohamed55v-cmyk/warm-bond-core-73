@@ -745,7 +745,17 @@ CORE IDENTITY (NEVER VIOLATE):
       }
     }
 
-    // Build tools array selectively
+    // ── Skills (Megsy Skills system) ──
+    if (activeSkill && typeof activeSkill === "object" && activeSkill.instructions) {
+      const skillName = String(activeSkill.name || "Custom Skill");
+      systemPrompt += `\n\n<active_skill name="${skillName}">\n${String(activeSkill.instructions).slice(0, 4000)}\n</active_skill>\n- The user explicitly selected this skill. Apply its persona, tone, and methodology throughout the response. Do not name the skill aloud unless asked.`;
+    } else if (Array.isArray(availableSkills) && availableSkills.length > 0) {
+      const list = availableSkills
+        .slice(0, 12)
+        .map((s: any) => `- ${String(s.name || "").slice(0, 60)} — ${String(s.description || "").slice(0, 140)}`)
+        .join("\n");
+      systemPrompt += `\n\nAVAILABLE SKILLS (auto mode — silently apply when relevant, never name them):\n${list}\n- If the user's request clearly matches one skill, adopt its expertise/tone for this turn. If multiple match, combine. If none match, answer normally.`;
+    }
     const selectedTools: any[] = [];
     if (!isCasualMessage) {
       if (isShopping) selectedTools.push(...shoppingTools);
