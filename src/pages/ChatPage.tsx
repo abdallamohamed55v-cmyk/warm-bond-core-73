@@ -1674,17 +1674,23 @@ Ask me anything to get started!`;
                   {members.map((m) => {
                     const c = colorForUser(m.id);
                     const isOwner = chatUserId && conversationOwnerId === chatUserId;
+                    const isOnline = onlineUsers.has(m.id);
                     return (
                       <div key={m.id} className="flex items-center gap-2 py-1">
-                        {m.avatar ? (
-                          <img src={m.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
-                            {(m.name || "?")[0]?.toUpperCase()}
-                          </div>
-                        )}
+                        <div className="relative">
+                          {m.avatar ? (
+                            <img src={m.avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                              {(m.name || "?")[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          {isOnline && (
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white" title="Online" />
+                          )}
+                        </div>
                         <span className="text-xs text-black flex-1 truncate">{m.name || "Member"}</span>
-                        <span className="text-[10px] text-black/50 capitalize">{m.role}</span>
+                        <span className="text-[10px] text-black/50 capitalize">{isOnline ? "online" : m.role}</span>
                         {isOwner && (
                           <button
                             onClick={() => handleKickMember(m.id)}
