@@ -712,21 +712,23 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
                 if (block.type === "questions") {
                   return null;
                 }
+                const blockText = typeof block.data === "string" ? block.data : JSON.stringify(block.data);
+                const bl = detectLang(blockText);
                 return (
-                  <div key={idx} className="prose-chat text-foreground">
-                    <MarkdownRenderer content={typeof block.data === "string" ? block.data : JSON.stringify(block.data)} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
+                  <div key={idx} dir={langDir(bl)} lang={bl === "ar" ? "ar" : bl === "en" ? "en" : undefined} className={`prose-chat text-foreground lang-${bl}`}>
+                    <MarkdownRenderer content={blockText} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="prose-chat text-foreground">
+          ) : (() => { const al = detectLang(content); return (
+            <div dir={langDir(al)} lang={al === "ar" ? "ar" : al === "en" ? "en" : undefined} className={`prose-chat text-foreground lang-${al}`}>
               <MarkdownRenderer content={content} onLinkClick={handleLinkClick} onPreviewCode={handlePreviewCode} />
               {isStreaming && (
                 <span className="inline-block w-1.5 h-4 bg-foreground/60 animate-pulse ml-0.5 align-middle" />
               )}
             </div>
-          )}
+          ); })()}
 
           {/* Sources — hidden for deep research */}
           {!isStreaming && !isDeepResearch && uniqueLinks.length > 0 && (
