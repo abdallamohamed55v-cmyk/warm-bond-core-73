@@ -1468,6 +1468,12 @@ Ask me anything to get started!`;
                     senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
                     isOtherMember={isOther}
                     bubbleColor={isOther ? colorForUser(msg.user_id!) : null}
+                    messageId={msg.id}
+                    currentUserId={chatUserId || undefined}
+                    reactions={msg.id ? messageReactions[msg.id] : undefined}
+                    onToggleReaction={msg.id ? toggleReaction : undefined}
+                    readers={msg.id ? (messageReads[msg.id] || []).filter((r) => r.user_id !== chatUserId).map((r) => ({ user_id: r.user_id, name: memberMap[r.user_id]?.name, avatar: memberMap[r.user_id]?.avatar })) : []}
+                    showReaders={members.length > 0 && msg.role === "user" && msg.user_id === chatUserId && i === messages.length - 1 - (messages[messages.length - 1]?.role === "assistant" ? 1 : 0)}
                   />
                 </motion.div>
                 );
