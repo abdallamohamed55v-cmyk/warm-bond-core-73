@@ -241,8 +241,8 @@ const ChatPage = () => {
       else if (m === "shopping") setChatMode("shopping");
       else setChatMode("normal");
     }
-    // Bump conversation to top of user's list (works for owner; safe-no-op for members)
-    supabase.from("conversations").update({ updated_at: new Date().toISOString() } as any).eq("id", id).then(() => {});
+    // Bump conversation to top of recent list (works for owner and members via RPC)
+    supabase.rpc("bump_conversation" as any, { p_conversation_id: id }).then(() => {});
     const { data: msgs } = await supabase.from("messages").select("*").eq("conversation_id", id).order("created_at", { ascending: true });
     if (msgs) {
       const senderIds = Array.from(new Set(msgs.map((m: any) => m.user_id).filter(Boolean)));

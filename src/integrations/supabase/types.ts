@@ -2625,6 +2625,10 @@ export type Database = {
         Args: { p_amount: number; p_description?: string; p_user_id: string }
         Returns: Json
       }
+      bump_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
       check_profile_update_safe_policy: {
         Args: { profile_row: Database["public"]["Tables"]["profiles"]["Row"] }
         Returns: boolean
