@@ -13,6 +13,42 @@ import DeepResearchCard from "./chat/DeepResearchCard";
 import ResearchTaskTimeline, { type ResearchTask } from "./research/ResearchTaskTimeline";
 import ResearchPlanCard, { type ResearchPlan } from "./research/ResearchPlanCard";
 import ResearchSummaryCard, { type ResearchSummary } from "./research/ResearchSummaryCard";
+import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationCarousel,
+  InlineCitationCarouselContent,
+  InlineCitationCarouselHeader,
+  InlineCitationCarouselIndex,
+  InlineCitationCarouselItem,
+  InlineCitationCarouselNext,
+  InlineCitationCarouselPrev,
+  InlineCitationSource,
+  InlineCitationText,
+} from "@/components/ai-elements/inline-citation";
+
+const extractDomainSafe = (url: string): string => {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+};
+
+const collectSourceUrls = (md: string): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const re = /\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md)) !== null) {
+    const u = m[1];
+    if (!seen.has(u)) { seen.add(u); out.push(u); }
+  }
+  const bare = /(?:^|\s)(https?:\/\/[^\s)\]]+)/g;
+  while ((m = bare.exec(md)) !== null) {
+    const u = m[1].replace(/[.,;:!?]+$/, "");
+    if (!seen.has(u)) { seen.add(u); out.push(u); }
+  }
+  return out;
+};
 
 interface ChatMessageProps {
   role: "user" | "assistant";
