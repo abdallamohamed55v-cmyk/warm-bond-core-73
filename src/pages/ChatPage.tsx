@@ -1349,7 +1349,7 @@ Ask me anything to get started!`;
               >
                 {[
                   { icon: Plus, label: "New chat", onClick: handleNewChat, featured: true },
-                  { icon: Share2, label: "Share chat", onClick: handleShare, hint: isShared ? "Public link" : undefined },
+                  { icon: Share2, label: "Share chat", onClick: handleShare },
                   { icon: UserPlus, label: "Invite people", onClick: handleInvite },
                   { icon: Pencil, label: "Rename", onClick: () => { setRenameValue(conversationTitle); setIsRenaming(true); } },
                   { icon: Pin, label: isPinned ? "Unpin chat" : "Pin chat", onClick: handleTogglePin },
