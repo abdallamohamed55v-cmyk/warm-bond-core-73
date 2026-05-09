@@ -22,7 +22,13 @@ export type Database = {
           created_at: string | null
           custom_instructions: string | null
           id: string
+          interests: string[]
+          language_style: string
+          preferred_tier: string
           profession: string | null
+          tone_creativity: number
+          tone_formality: number
+          tone_verbosity: number
           updated_at: string | null
           user_id: string
         }
@@ -33,7 +39,13 @@ export type Database = {
           created_at?: string | null
           custom_instructions?: string | null
           id?: string
+          interests?: string[]
+          language_style?: string
+          preferred_tier?: string
           profession?: string | null
+          tone_creativity?: number
+          tone_formality?: number
+          tone_verbosity?: number
           updated_at?: string | null
           user_id: string
         }
@@ -44,7 +56,13 @@ export type Database = {
           created_at?: string | null
           custom_instructions?: string | null
           id?: string
+          interests?: string[]
+          language_style?: string
+          preferred_tier?: string
           profession?: string | null
+          tone_creativity?: number
+          tone_formality?: number
+          tone_verbosity?: number
           updated_at?: string | null
           user_id?: string
         }
@@ -92,6 +110,39 @@ export type Database = {
           last_used_at?: string | null
           service?: string
           usage_count?: number | null
+        }
+        Relationships: []
+      }
+      attachment_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          conversation_id: string | null
+          created_at: string
+          embedding: string | null
+          file_name: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          chunk_index?: number
+          content: string
+          conversation_id?: string | null
+          created_at?: string
+          embedding?: string | null
+          file_name?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          conversation_id?: string | null
+          created_at?: string
+          embedding?: string | null
+          file_name?: string | null
+          id?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -2360,6 +2411,36 @@ export type Database = {
           },
         ]
       }
+      user_memories: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          fact: string
+          id: string
+          importance: number
+          source: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          fact: string
+          id?: string
+          importance?: number
+          source?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          fact?: string
+          id?: string
+          importance?: number
+          source?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_memory_entries: {
         Row: {
           created_at: string
@@ -2757,6 +2838,34 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      search_attachment_chunks: {
+        Args: {
+          p_conversation_id: string
+          p_match_count?: number
+          p_query_embedding: string
+          p_user_id: string
+        }
+        Returns: {
+          chunk_index: number
+          content: string
+          file_name: string
+          id: string
+          similarity: number
+        }[]
+      }
+      search_user_memories: {
+        Args: {
+          p_match_count?: number
+          p_query_embedding: string
+          p_user_id: string
+        }
+        Returns: {
+          fact: string
+          id: string
+          importance: number
+          similarity: number
+        }[]
       }
       update_profile_safe: {
         Args: {
