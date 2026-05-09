@@ -1703,6 +1703,17 @@ Ask me anything to get started!`;
         {/* Bottom input - floating with blur */}
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 md:px-6 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 pointer-events-none">
             <div className="max-w-3xl mx-auto space-y-2 pointer-events-auto">
+              {/* Deep Research quick toggle */}
+              <div className="flex items-center gap-2">
+                <DeepResearchToggle
+                  active={chatMode === "deep-research"}
+                  onToggle={() => {
+                    setChatMode((prev) => prev === "deep-research" ? "normal" : "deep-research");
+                    setSearchEnabled(true);
+                    setPlusMenuOpen(false);
+                  }}
+                />
+              </div>
               {/* Mode badge above input */}
               <AnimatePresence>
                 {chatMode !== "normal" && (
