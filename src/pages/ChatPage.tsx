@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Highlighter } from "@/components/magicui/highlighter";
 import UnlockProButton from "@/components/UnlockProButton";
 import { motion, AnimatePresence } from "framer-motion";
@@ -140,9 +140,21 @@ const ChatPage = () => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [systemEvents, setSystemEvents] = useState<{ id: string; text: string; at: number }[]>([]);
+  // Read receipts: messageId -> array of readers
+  const [messageReads, setMessageReads] = useState<Record<string, { user_id: string; name?: string; avatar?: string }[]>>({});
+  // Reactions: messageId -> array of {emoji, users}
+  const [messageReactions, setMessageReactions] = useState<Record<string, { id: string; emoji: string; user_id: string }[]>>({});
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  // Mentions
+  const [mentionQuery, setMentionQuery] = useState<{ q: string; start: number } | null>(null);
+  // Unread tracking for sound + title
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const originalTitleRef = useRef<string>("");
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
+  const markedReadRef = useRef<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState<AgentModel | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [userName, setUserName] = useState<string>("");
@@ -171,10 +183,12 @@ const ChatPage = () => {
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setShowScrollBtn(distFromBottom > 200);
+    if (distFromBottom < 100) setNewMessagesCount(0);
   }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setNewMessagesCount(0);
   }, []);
 
   // Only auto-scroll on user's own new message, not during streaming
@@ -888,7 +902,23 @@ Ask me anything to get started!`;
             senderAvatar,
           }];
         });
-        setTimeout(() => scrollToBottom(), 100);
+        // Smart auto-scroll: only scroll if user is near bottom; else show "new messages" badge
+        const el = messagesContainerRef.current;
+        const nearBottom = el ? (el.scrollHeight - el.scrollTop - el.clientHeight) < 200 : true;
+        if (nearBottom) {
+          setTimeout(() => scrollToBottom(), 100);
+        } else if (newMsg.user_id !== chatUserId) {
+          setNewMessagesCount((c) => c + 1);
+        }
+        // Sound + title badge if from another user
+        if (newMsg.user_id && newMsg.user_id !== chatUserId) {
+          if (typeof document !== "undefined" && document.hidden) {
+            setUnreadCount((c) => c + 1);
+            playNotificationSound();
+          } else if (!nearBottom) {
+            playNotificationSound();
+          }
+        }
       })
       .subscribe();
 
@@ -958,6 +988,138 @@ Ask me anything to get started!`;
     toast.success("Member removed");
   };
 
+  // Track avatar map for quick lookup
+  const memberMap = useMemo(() => {
+    const m: Record<string, { name?: string; avatar?: string }> = {};
+    members.forEach((mb) => { m[mb.id] = { name: mb.name, avatar: mb.avatar }; });
+    if (chatUserId) m[chatUserId] = { name: userName || "You", avatar: undefined };
+    return m;
+  }, [members, chatUserId, userName]);
+
+  // Load reactions + reads for current conversation, subscribe to realtime
+  useEffect(() => {
+    if (!conversationId || !chatUserId) return;
+    let cancelled = false;
+    (async () => {
+      const [{ data: reads }, { data: reactions }] = await Promise.all([
+        supabase.from("message_reads" as any).select("message_id, user_id").eq("conversation_id", conversationId),
+        supabase.from("message_reactions" as any).select("id, message_id, user_id, emoji").eq("conversation_id", conversationId),
+      ]);
+      if (cancelled) return;
+      const readsMap: Record<string, { user_id: string; name?: string; avatar?: string }[]> = {};
+      (reads || []).forEach((r: any) => { (readsMap[r.message_id] ||= []).push({ user_id: r.user_id }); });
+      setMessageReads(readsMap);
+      const reactMap: Record<string, { id: string; emoji: string; user_id: string }[]> = {};
+      (reactions || []).forEach((r: any) => { (reactMap[r.message_id] ||= []).push({ id: r.id, emoji: r.emoji, user_id: r.user_id }); });
+      setMessageReactions(reactMap);
+    })();
+
+    const ch = supabase.channel(`reads-reactions-${conversationId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_reads", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const r = payload.new as any;
+        setMessageReads((prev) => {
+          const list = prev[r.message_id] || [];
+          if (list.some((x) => x.user_id === r.user_id)) return prev;
+          return { ...prev, [r.message_id]: [...list, { user_id: r.user_id }] };
+        });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_reactions", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const r = payload.new as any;
+        setMessageReactions((prev) => {
+          const list = prev[r.message_id] || [];
+          if (list.some((x) => x.id === r.id)) return prev;
+          return { ...prev, [r.message_id]: [...list, { id: r.id, emoji: r.emoji, user_id: r.user_id }] };
+        });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "message_reactions", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const old = payload.old as any;
+        setMessageReactions((prev) => {
+          const list = prev[old.message_id] || [];
+          return { ...prev, [old.message_id]: list.filter((x) => x.id !== old.id) };
+        });
+      })
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(ch); markedReadRef.current.clear(); };
+  }, [conversationId, chatUserId]);
+
+  // Mark visible messages as read
+  useEffect(() => {
+    if (!conversationId || !chatUserId || messages.length === 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const toMark = messages
+      .filter((m) => m.id && m.user_id !== chatUserId && !markedReadRef.current.has(m.id))
+      .map((m) => m.id!);
+    if (toMark.length === 0) return;
+    toMark.forEach((id) => markedReadRef.current.add(id));
+    const t = setTimeout(() => {
+      supabase.from("message_reads" as any).insert(
+        toMark.map((mid) => ({ message_id: mid, user_id: chatUserId, conversation_id: conversationId }))
+      ).then(({ error }: any) => { if (error) toMark.forEach((id) => markedReadRef.current.delete(id)); });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [messages, conversationId, chatUserId]);
+
+  // Sound + document title for unread when tab hidden
+  useEffect(() => {
+    if (!originalTitleRef.current) originalTitleRef.current = document.title;
+    const onVis = () => { if (!document.hidden) { setUnreadCount(0); document.title = originalTitleRef.current; } };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  useEffect(() => {
+    if (unreadCount > 0) document.title = `(${unreadCount}) ${originalTitleRef.current || "Chat"}`;
+    else if (originalTitleRef.current) document.title = originalTitleRef.current;
+  }, [unreadCount]);
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+      o.start(); o.stop(ctx.currentTime + 0.26);
+      setTimeout(() => ctx.close(), 400);
+    } catch {}
+  }, []);
+
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!conversationId || !chatUserId) return;
+    const existing = (messageReactions[messageId] || []).find((r) => r.user_id === chatUserId && r.emoji === emoji);
+    if (existing) {
+      setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).filter((r) => r.id !== existing.id) }));
+      await supabase.from("message_reactions" as any).delete().eq("id", existing.id);
+    } else {
+      const tempId = `tmp-${Date.now()}`;
+      setMessageReactions((prev) => ({ ...prev, [messageId]: [...(prev[messageId] || []), { id: tempId, emoji, user_id: chatUserId }] }));
+      const { data, error } = await supabase.from("message_reactions" as any).insert({ message_id: messageId, user_id: chatUserId, conversation_id: conversationId, emoji }).select("id").single();
+      if (error) {
+        setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).filter((r) => r.id !== tempId) }));
+      } else if (data) {
+        setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).map((r) => r.id === tempId ? { ...r, id: (data as any).id } : r) }));
+      }
+    }
+    setReactionPickerFor(null);
+  }, [conversationId, chatUserId, messageReactions]);
+
+  // Mention detection from input
+  useEffect(() => {
+    if (members.length === 0) { setMentionQuery(null); return; }
+    const m = input.match(/(?:^|\s)@(\w{0,30})$/);
+    if (m) setMentionQuery({ q: m[1] || "", start: input.length - m[1].length - 1 });
+    else setMentionQuery(null);
+  }, [input, members.length]);
+
+  const insertMention = useCallback((name: string) => {
+    if (!mentionQuery) return;
+    const before = input.slice(0, mentionQuery.start);
+    const safeName = name.replace(/\s+/g, "_");
+    setInput(`${before}@${safeName} `);
+    setMentionQuery(null);
+  }, [input, mentionQuery]);
 
   const handleDelete = () => {
     if (!conversationId) return;
@@ -1308,31 +1470,50 @@ Ask me anything to get started!`;
 
               {/* Typing indicator */}
               {typingUsers.length > 0 && (
-                <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                  <div className="flex gap-1">
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+                >
+                  <div className="flex -space-x-1.5">
+                    {typingUsers.slice(0, 3).map((u) => {
+                      const c = colorForUser(u.id);
+                      return u.avatar ? (
+                        <img key={u.id} src={u.avatar} alt="" className="w-5 h-5 rounded-full ring-2 ring-background object-cover" />
+                      ) : (
+                        <div key={u.id} className="w-5 h-5 rounded-full ring-2 ring-background flex items-center justify-center text-[9px] font-bold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                          {(u.name || "?")[0]?.toUpperCase()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
                     <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />
                     <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                   <span>{typingUsers.map((u) => u.name).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing…</span>
-                </div>
+                </motion.div>
               )}
               <div ref={messagesEndRef} />
             </div>
           )}
 
           <AnimatePresence>
-            {showScrollBtn && messages.length > 0 && (
+            {(showScrollBtn || newMessagesCount > 0) && messages.length > 0 && (
               <motion.button
                 initial={{ opacity: 0, y: 8, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.9 }}
                 transition={{ type: "spring", stiffness: 320, damping: 24 }}
                 onClick={scrollToBottom}
-                className="fixed bottom-40 left-1/2 -translate-x-1/2 z-20 w-8 h-8 rounded-full liquid-glass flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+                className={`fixed bottom-40 left-1/2 -translate-x-1/2 z-20 ${newMessagesCount > 0 ? "px-3 h-8 gap-1.5 bg-primary text-primary-foreground" : "w-8 h-8 liquid-glass text-foreground/70 hover:text-foreground"} rounded-full flex items-center justify-center transition-colors shadow-lg`}
                 aria-label="Scroll to bottom"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
+                {newMessagesCount > 0 && (
+                  <span className="text-xs font-semibold">{newMessagesCount} new</span>
+                )}
               </motion.button>
             )}
           </AnimatePresence>
@@ -1454,6 +1635,39 @@ Ask me anything to get started!`;
                 <AnimatePresence>
                   {plusMenuOpen && renderPlusMenu()}
                 </AnimatePresence>
+                {mentionQuery && members.filter((m) => (m.name || "").toLowerCase().includes(mentionQuery.q.toLowerCase())).length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="absolute bottom-full left-0 right-0 mb-2 mx-3 rounded-xl border border-border bg-popover shadow-lg overflow-hidden z-30"
+                  >
+                    {members
+                      .filter((m) => (m.name || "").toLowerCase().includes(mentionQuery.q.toLowerCase()))
+                      .slice(0, 5)
+                      .map((m) => {
+                        const c = colorForUser(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => insertMention(m.name || "Member")}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent text-left transition-colors"
+                          >
+                            {m.avatar ? (
+                              <img src={m.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c?.bg || "hsl(var(--accent))" }}>
+                                {(m.name || "?")[0]?.toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-sm flex-1 truncate">{m.name || "Member"}</span>
+                            {onlineUsers.has(m.id) && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                          </button>
+                        );
+                      })}
+                  </motion.div>
+                )}
                 <AnimatedInput
                   value={input}
                   onChange={setInput}
