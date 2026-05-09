@@ -137,6 +137,9 @@ const ChatPage = () => {
   const [chatUserId, setChatUserId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<{ id: string; name: string; avatar: string | null }[]>([]);
   const [remoteAiBusy, setRemoteAiBusy] = useState<{ name: string } | null>(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [systemEvents, setSystemEvents] = useState<{ id: string; text: string; at: number }[]>([]);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
