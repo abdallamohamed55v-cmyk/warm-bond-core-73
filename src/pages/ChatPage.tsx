@@ -623,9 +623,26 @@ const ChatPage = () => {
           const t: ResearchTask = { id: payload.id, kind: payload.kind || "search", label: payload.label || "Working…", target: payload.target, status: "running" };
           upsertResearchTask(t);
         } else if (ev === "task_update") {
-          updateResearchTask(payload.id, { label: payload.label, target: payload.target });
+          const patch: Partial<ResearchTask> = {};
+          if (payload.label !== undefined) patch.label = payload.label;
+          if (payload.target !== undefined) patch.target = payload.target;
+          if (Array.isArray(payload.domains)) patch.domains = payload.domains;
+          if (Array.isArray(payload.bullets)) patch.bullets = payload.bullets;
+          if (payload.image) patch.image = payload.image;
+          updateResearchTask(payload.id, patch);
         } else if (ev === "task_done") {
           updateResearchTask(payload.id, { status: payload.error ? "error" : "done", summary: payload.summary });
+        } else if (ev === "image_found") {
+          const url = String(payload.url || "");
+          if (url) {
+            upsertResearchTask({
+              id: `image-${url}`,
+              kind: "image",
+              label: payload.caption ? `Found: ${String(payload.caption).slice(0, 80)}` : "Found a relevant image",
+              status: "done",
+              image: { url, caption: payload.caption },
+            });
+          }
         } else if (ev === "final_summary") {
           researchTasksRef.current = researchTasksRef.current.map((task) => task.status === "running" ? { ...task, status: "done" } : task);
           setResearchTasks(researchTasksRef.current);
