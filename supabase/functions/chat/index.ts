@@ -413,28 +413,50 @@ serve(async (req) => {
 
     // ── Fetch user context (optimized — skip heavy queries for casual) ──
     let userContext = "";
+    let userPlan: string | null = null;
+    let userPersonalization: any = null;
+    let userMemories: Array<{ fact: string; importance: number }> = [];
     // Detect casual early to skip expensive context fetching
     const isCasualEarly = /^(هلا|اهلا|هاي|مرحبا|السلام|سلام|hi|hello|hey|yo|sup|thanks|شكرا|تمام|ok|اوك|good|كويس|ازيك|عامل ايه|كيفك|صباح|مساء|bye|وداعا|ايوه|لا)\b/i.test(latestUserText.trim()) && latestUserText.trim().split(/\s+/).length <= 5;
 
     if (user_id && !isCasualEarly) {
       try {
-        const [profileRes, personalizationRes] = await Promise.all([
+        const [profileRes, personalizationRes, memoriesRes] = await Promise.all([
           sb.from("profiles").select("display_name, plan, credits").eq("id", user_id).single(),
-          sb.from("ai_personalization").select("call_name, about, profession, ai_traits, custom_instructions").eq("user_id", user_id).maybeSingle(),
+          sb.from("ai_personalization").select("call_name, about, profession, ai_traits, custom_instructions, tone_formality, tone_verbosity, tone_creativity, language_style, interests, preferred_tier").eq("user_id", user_id).maybeSingle(),
+          sb.from("user_memories").select("fact, importance").eq("user_id", user_id).order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(10),
         ]);
 
         const parts: string[] = [];
         if (profileRes.data) {
           const p = profileRes.data;
+          userPlan = p.plan;
           parts.push(`User name: ${p.display_name || "Unknown"} (Plan: ${p.plan}, Credits: ${p.credits} MC — only mention if user asks)`);
         }
         if (personalizationRes.data) {
           const ai = personalizationRes.data;
+          userPersonalization = ai;
           if (ai.call_name) parts.push(`Call the user: "${ai.call_name}"`);
           if (ai.about) parts.push(`About user: ${ai.about}`);
           if (ai.profession) parts.push(`Profession: ${ai.profession}`);
           if (ai.ai_traits) parts.push(`AI personality: ${ai.ai_traits}`);
           if (ai.custom_instructions) parts.push(`Custom instructions: ${ai.custom_instructions}`);
+          if (Array.isArray(ai.interests) && ai.interests.length > 0) parts.push(`User interests: ${ai.interests.join(", ")}`);
+          // Tone sliders → natural-language hints
+          const tone: string[] = [];
+          if (ai.tone_formality != null) tone.push(ai.tone_formality < 35 ? "casual/friendly" : ai.tone_formality > 65 ? "formal/professional" : "balanced formality");
+          if (ai.tone_verbosity != null) tone.push(ai.tone_verbosity < 35 ? "concise/brief" : ai.tone_verbosity > 65 ? "detailed/thorough" : "balanced length");
+          if (ai.tone_creativity != null) tone.push(ai.tone_creativity < 35 ? "conservative/factual" : ai.tone_creativity > 65 ? "creative/expressive" : "balanced creativity");
+          if (tone.length > 0) parts.push(`Preferred tone: ${tone.join(", ")}`);
+          if (ai.language_style && ai.language_style !== "mixed") {
+            const styleMap: Record<string, string> = { formal_arabic: "Modern Standard Arabic (فصحى)", egyptian: "Egyptian Arabic dialect (عامية مصرية)", english: "English", mixed: "Match user's language" };
+            parts.push(`Language preference: ${styleMap[ai.language_style] || ai.language_style}`);
+          }
+        }
+        if (memoriesRes.data && memoriesRes.data.length > 0) {
+          userMemories = memoriesRes.data;
+          const memoryLines = memoriesRes.data.map((m: any) => `• ${m.fact}`).join("\n");
+          parts.push(`\nRemembered facts about the user:\n${memoryLines}`);
         }
         if (parts.length > 0) userContext = `\n\n--- USER CONTEXT ---\n${parts.join("\n")}`;
       } catch { /* silently skip */ }
