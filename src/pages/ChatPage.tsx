@@ -970,6 +970,138 @@ Ask me anything to get started!`;
     toast.success("Member removed");
   };
 
+  // Track avatar map for quick lookup
+  const memberMap = useMemo(() => {
+    const m: Record<string, { name?: string; avatar?: string }> = {};
+    members.forEach((mb) => { m[mb.id] = { name: mb.name, avatar: mb.avatar }; });
+    if (chatUserId) m[chatUserId] = { name: userName || "You", avatar: undefined };
+    return m;
+  }, [members, chatUserId, userName]);
+
+  // Load reactions + reads for current conversation, subscribe to realtime
+  useEffect(() => {
+    if (!conversationId || !chatUserId) return;
+    let cancelled = false;
+    (async () => {
+      const [{ data: reads }, { data: reactions }] = await Promise.all([
+        supabase.from("message_reads" as any).select("message_id, user_id").eq("conversation_id", conversationId),
+        supabase.from("message_reactions" as any).select("id, message_id, user_id, emoji").eq("conversation_id", conversationId),
+      ]);
+      if (cancelled) return;
+      const readsMap: Record<string, { user_id: string; name?: string; avatar?: string }[]> = {};
+      (reads || []).forEach((r: any) => { (readsMap[r.message_id] ||= []).push({ user_id: r.user_id }); });
+      setMessageReads(readsMap);
+      const reactMap: Record<string, { id: string; emoji: string; user_id: string }[]> = {};
+      (reactions || []).forEach((r: any) => { (reactMap[r.message_id] ||= []).push({ id: r.id, emoji: r.emoji, user_id: r.user_id }); });
+      setMessageReactions(reactMap);
+    })();
+
+    const ch = supabase.channel(`reads-reactions-${conversationId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_reads", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const r = payload.new as any;
+        setMessageReads((prev) => {
+          const list = prev[r.message_id] || [];
+          if (list.some((x) => x.user_id === r.user_id)) return prev;
+          return { ...prev, [r.message_id]: [...list, { user_id: r.user_id }] };
+        });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_reactions", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const r = payload.new as any;
+        setMessageReactions((prev) => {
+          const list = prev[r.message_id] || [];
+          if (list.some((x) => x.id === r.id)) return prev;
+          return { ...prev, [r.message_id]: [...list, { id: r.id, emoji: r.emoji, user_id: r.user_id }] };
+        });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "message_reactions", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        const old = payload.old as any;
+        setMessageReactions((prev) => {
+          const list = prev[old.message_id] || [];
+          return { ...prev, [old.message_id]: list.filter((x) => x.id !== old.id) };
+        });
+      })
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(ch); markedReadRef.current.clear(); };
+  }, [conversationId, chatUserId]);
+
+  // Mark visible messages as read
+  useEffect(() => {
+    if (!conversationId || !chatUserId || messages.length === 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const toMark = messages
+      .filter((m) => m.id && m.user_id !== chatUserId && !markedReadRef.current.has(m.id))
+      .map((m) => m.id!);
+    if (toMark.length === 0) return;
+    toMark.forEach((id) => markedReadRef.current.add(id));
+    const t = setTimeout(() => {
+      supabase.from("message_reads" as any).insert(
+        toMark.map((mid) => ({ message_id: mid, user_id: chatUserId, conversation_id: conversationId }))
+      ).then(({ error }: any) => { if (error) toMark.forEach((id) => markedReadRef.current.delete(id)); });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [messages, conversationId, chatUserId]);
+
+  // Sound + document title for unread when tab hidden
+  useEffect(() => {
+    if (!originalTitleRef.current) originalTitleRef.current = document.title;
+    const onVis = () => { if (!document.hidden) { setUnreadCount(0); document.title = originalTitleRef.current; } };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  useEffect(() => {
+    if (unreadCount > 0) document.title = `(${unreadCount}) ${originalTitleRef.current || "Chat"}`;
+    else if (originalTitleRef.current) document.title = originalTitleRef.current;
+  }, [unreadCount]);
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+      o.start(); o.stop(ctx.currentTime + 0.26);
+      setTimeout(() => ctx.close(), 400);
+    } catch {}
+  }, []);
+
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!conversationId || !chatUserId) return;
+    const existing = (messageReactions[messageId] || []).find((r) => r.user_id === chatUserId && r.emoji === emoji);
+    if (existing) {
+      setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).filter((r) => r.id !== existing.id) }));
+      await supabase.from("message_reactions" as any).delete().eq("id", existing.id);
+    } else {
+      const tempId = `tmp-${Date.now()}`;
+      setMessageReactions((prev) => ({ ...prev, [messageId]: [...(prev[messageId] || []), { id: tempId, emoji, user_id: chatUserId }] }));
+      const { data, error } = await supabase.from("message_reactions" as any).insert({ message_id: messageId, user_id: chatUserId, conversation_id: conversationId, emoji }).select("id").single();
+      if (error) {
+        setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).filter((r) => r.id !== tempId) }));
+      } else if (data) {
+        setMessageReactions((prev) => ({ ...prev, [messageId]: (prev[messageId] || []).map((r) => r.id === tempId ? { ...r, id: (data as any).id } : r) }));
+      }
+    }
+    setReactionPickerFor(null);
+  }, [conversationId, chatUserId, messageReactions]);
+
+  // Mention detection from input
+  useEffect(() => {
+    if (members.length === 0) { setMentionQuery(null); return; }
+    const m = input.match(/(?:^|\s)@(\w{0,30})$/);
+    if (m) setMentionQuery({ q: m[1] || "", start: input.length - m[1].length - 1 });
+    else setMentionQuery(null);
+  }, [input, members.length]);
+
+  const insertMention = useCallback((name: string) => {
+    if (!mentionQuery) return;
+    const before = input.slice(0, mentionQuery.start);
+    const safeName = name.replace(/\s+/g, "_");
+    setInput(`${before}@${safeName} `);
+    setMentionQuery(null);
+  }, [input, mentionQuery]);
 
   const handleDelete = () => {
     if (!conversationId) return;
