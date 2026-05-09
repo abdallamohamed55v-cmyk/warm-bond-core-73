@@ -1436,6 +1436,11 @@ async function handleToolCalls(
         const organicCount = searchData.organic?.length || 0;
         pushStatus(organicCount > 0 ? (isDeepResearch ? "Reviewing the sources..." : "Reviewing the results...") : "Search completed");
         allSearchResults.push(context);
+        if (isDeepResearch) {
+          (searchData.organic || []).forEach((r: any) => { if (r?.link) researchSourcesSet.add(r.link); });
+          researchChannels.add("Web");
+          emitTaskDone(searchTaskId, `${organicCount} results`);
+        }
 
         // ── Deep Research enrichment: layer multiple free open sources in parallel.
         if (isDeepResearch) {
@@ -1453,22 +1458,31 @@ async function handleToolCalls(
           if (reddit.status === "fulfilled" && reddit.value.length) extra.push({ engine: "Reddit", results: reddit.value });
           if (hn.status === "fulfilled" && hn.value.length) extra.push({ engine: "Hacker News", results: hn.value });
           for (const e of extra) {
+            const auxId = newTaskId();
+            emitTaskStart(auxId, e.engine === "Wikipedia" ? "wiki" : (e.engine === "arXiv" ? "academic" : "social"), `Consulting ${e.engine}`, searchQuery);
             const block = `Search (${e.engine}): "${searchQuery}"\n` + e.results.map((r, i) =>
               `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.url}`
             ).join("\n\n");
             allSearchResults.push(block);
+            e.results.forEach((r) => { if (r.url) researchSourcesSet.add(r.url); });
+            researchChannels.add(e.engine);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "source_engine", engine: e.engine, count: e.results.length })}\n\n`));
+            emitTaskDone(auxId, `${e.results.length} results`);
           }
 
           // Read top 2 organic links via Jina Reader for deeper content.
           const topLinks: string[] = (searchData.organic || []).slice(0, 2).map((r: any) => r.link).filter(Boolean);
           if (topLinks.length > 0) {
             pushStatus("Reading top sources in depth...");
+            const readIds = topLinks.map((u) => { const id = newTaskId(); emitTaskStart(id, "read", "Reading source in depth", u); return id; });
             const reads = await Promise.allSettled(topLinks.map((u) => readWithJina(u)));
             reads.forEach((res, i) => {
               if (res.status === "fulfilled" && res.value && res.value.length > 200) {
                 allSearchResults.push(`Deep read of ${topLinks[i]}:\n${res.value}`);
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "deep_read", url: topLinks[i] })}\n\n`));
+                emitTaskDone(readIds[i], "Extracted full content");
+              } else {
+                emitTaskDone(readIds[i], undefined, "read_failed");
               }
             });
           }
