@@ -420,6 +420,10 @@ const ChatPage = () => {
     setAttachedFiles([]);
     setIsLoading(true);setIsThinking(true);
     setPendingQuestions([]);
+    setResearchPlan(null);
+    setResearchTasks([]);
+    setResearchSummary(null);
+    setClarifyQs(null);
 
     const conversationPromise = createOrUpdateConversation(userInput || "File analysis").catch(() => null);
     void conversationPromise.then(async (resolvedConversationId) => {
