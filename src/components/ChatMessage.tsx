@@ -549,7 +549,7 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
             {renderTextWithMentions(content)}
           </div>
           <ReactionsRow reactions={reactions || []} currentUserId={currentUserId} onToggle={onToggleReaction} messageId={messageId} align={isOtherMember ? "left" : "right"} />
-          {showReaders && <ReadersRow readers={readers || []} align={isOtherMember ? "left" : "right"} />
+          {showReaders && <ReadersRow readers={readers || []} align={isOtherMember ? "left" : "right"} />}
 
           <AnimatePresence>
             {menuOpen && (
