@@ -230,6 +230,9 @@ const ChatPage = () => {
     setConversationId(id);
     setSearchStatus("");
     setPendingQuestions([]);
+    setLoadingMessages(true);
+    setMessages([]);
+    setSystemEvents([]);
     const { data: conv } = await supabase.from("conversations").select("title, is_shared, share_id, is_pinned, mode, user_id").eq("id", id).single();
     if (conv) {
       setConversationTitle(conv.title || "Untitled");
