@@ -1764,32 +1764,31 @@ Ask me anything to get started!`;
           </DialogContent>
         </Dialog>
 
-        {/* Rename Dialog - Glass */}
+        {/* Rename Dialog - Glass (matches Share dialog style) */}
         <Dialog open={isRenaming} onOpenChange={setIsRenaming}>
-          <DialogContent className={`${glassDialogClass} sm:max-w-sm`}>
-            <div className="p-5 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0">
-                  <Pencil className="w-5 h-5 text-primary" strokeWidth={2} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <DialogTitle className="text-base font-semibold text-foreground">Rename chat</DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground mt-1">
-                    Give this conversation a new name.
-                  </DialogDescription>
-                </div>
+          <DialogContent className={glassDialogClass}>
+            <div className="px-5 pt-5 pb-3">
+              <DialogHeader className="mb-0">
+                <DialogTitle className="text-base font-semibold text-left text-black">Rename chat</DialogTitle>
+                <DialogDescription className="text-xs text-left text-black/70">Give this conversation a new name</DialogDescription>
+              </DialogHeader>
+            </div>
+            <div className="border-t border-border/30 px-5 py-4">
+              <div className="flex items-center gap-3 rounded-xl liquid-glass-button px-3 py-2.5">
+                <Pencil className="w-4 h-4 text-black shrink-0" />
+                <input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleRename()}
+                  placeholder="Chat name"
+                  autoFocus
+                  className="flex-1 bg-transparent border-0 outline-none text-sm font-medium text-black placeholder:text-black/40"
+                />
               </div>
-              <Input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                placeholder="Chat name"
-                className="h-11 rounded-xl border-border/40 bg-accent/20 text-sm text-foreground placeholder:text-muted-foreground"
-                onKeyDown={(e) => e.key === "Enter" && handleRename()}
-                autoFocus />
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setIsRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors">Cancel</button>
-                <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-opacity">Save</button>
-              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 pb-5 border-t border-border/30 pt-4">
+              <button onClick={() => setIsRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-black/70 hover:text-black liquid-glass-hover transition-colors">Cancel</button>
+              <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-semibold bg-black text-white hover:opacity-90 transition-opacity">Save</button>
             </div>
           </DialogContent>
         </Dialog>
