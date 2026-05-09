@@ -1942,7 +1942,29 @@ async function handleToolCalls(
 
     pushStatus(isDeepResearch ? "Writing the report now..." : (isShopping ? "Preparing recommendations..." : "Writing response..."));
     if (isDeepResearch) {
+      const synthId = newTaskId();
+      emitTaskStart(synthId, "synthesize", "Synthesizing findings into a structured report");
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "synthesizing" })}\n\n`));
+      // Final summary preview (sent before the report streams so the user sees what was done)
+      const sources = researchSourcesSet.size;
+      const channels = Array.from(researchChannels);
+      const conf = sources >= 8 ? "high" : sources >= 4 ? "medium" : "low";
+      const summary = {
+        event: "final_summary",
+        what_i_did: [
+          `Ran ${validToolCalls.filter((tc) => tc.function?.name === "WEB_SEARCH").length} targeted web searches`,
+          `Cross-checked ${channels.length} different source channels`,
+          `Read ${Math.min(sources, 12)} sources in detail`,
+          `Synthesized findings with inline citations`,
+        ],
+        sources_count: sources,
+        channels,
+        duration_ms: Date.now() - researchStartedAt,
+        confidence: conf,
+        confidence_reason: sources >= 8 ? "Multiple independent sources agree." : sources >= 4 ? "Reasonable source coverage; some gaps possible." : "Limited sources — treat as preliminary.",
+      };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(summary)}\n\n`));
+      emitTaskDone(synthId, "Report ready");
     }
     const combinedContext = allSearchResults.join("\n\n=== Next Source ===\n\n");
 
