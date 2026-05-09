@@ -40,7 +40,8 @@ const ResearchTaskTimeline = ({ tasks, isActive }: Props) => {
 
   if (tasks.length === 0 && !isActive) return null;
 
-  const lastRunning = tasks.findLast?.((t) => t.status === "running");
+  let lastRunning: ResearchTask | undefined;
+  for (let i = tasks.length - 1; i >= 0; i--) { if (tasks[i].status === "running") { lastRunning = tasks[i]; break; } }
   const headline = isActive
     ? (lastRunning?.label || "Researching…")
     : `Researched ${stats.sources} source${stats.sources === 1 ? "" : "s"}`;
