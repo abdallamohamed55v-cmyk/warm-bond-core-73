@@ -1222,8 +1222,8 @@ Ask me anything to get started!`;
                   isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
                   researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
                   researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
-                  senderName={msg.senderName || undefined}
-                  senderAvatar={msg.senderAvatar || undefined}
+                  senderName={members.length > 0 ? msg.senderName || undefined : undefined}
+                  senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
                   isOtherMember={msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId}
                   bubbleColor={msg.role === "user" && msg.user_id && msg.user_id !== chatUserId ? colorForUser(msg.user_id) : null} />
 
