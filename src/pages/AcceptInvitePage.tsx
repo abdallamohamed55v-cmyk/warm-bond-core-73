@@ -63,7 +63,7 @@ export default function AcceptInvitePage() {
       return;
     }
     toast.success("Joined conversation!");
-    navigate(`/chat?id=${result.conversation_id}`);
+    navigate(`/chat?conv=${result.conversation_id}`);
   };
 
   const handleDecline = () => navigate("/");
