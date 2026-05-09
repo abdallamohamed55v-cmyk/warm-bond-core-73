@@ -108,11 +108,24 @@ const AppSidebar = ({ open, onClose, onNewChat, onSelectConversation, activeConv
     const validModes = ["code", "images", "videos", "files", "learning", "shopping", "research"];
     const modeFilter = validModes.includes(currentMode) ? currentMode : "chat";
     const modesToFetch = showsBothChatAndResearch ? ["chat", "research"] : [modeFilter];
-    const { data } = await supabase
+
+    // Conversations the user is a member of (joined via invite)
+    const { data: memberRows } = await supabase
+      .from("conversation_members")
+      .select("conversation_id")
+      .eq("user_id", user.id);
+    const memberConvIds = (memberRows || []).map((r: any) => r.conversation_id);
+
+    let query = supabase
       .from("conversations")
       .select("id, title, updated_at, mode, is_pinned")
-      .in("mode", modesToFetch)
-      .eq("user_id", user.id)
+      .in("mode", modesToFetch);
+    if (memberConvIds.length > 0) {
+      query = query.or(`user_id.eq.${user.id},id.in.(${memberConvIds.join(",")})`);
+    } else {
+      query = query.eq("user_id", user.id);
+    }
+    const { data } = await query
       .order("is_pinned", { ascending: false })
       .order("updated_at", { ascending: false })
       .limit(30);
