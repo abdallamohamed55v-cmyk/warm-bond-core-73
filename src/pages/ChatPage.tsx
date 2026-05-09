@@ -1222,7 +1222,18 @@ Ask me anything to get started!`;
 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto min-h-0 relative" ref={messagesContainerRef} onScroll={handleScroll}>
-          {messages.length === 0 ? (
+          {loadingMessages && messages.length === 0 ? (
+            <div className="max-w-3xl mx-auto py-6 px-4 md:px-6 space-y-4 pb-44 md:pb-52">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`h-12 rounded-2xl bg-muted/60 animate-pulse ${i % 2 === 0 ? "w-2/3" : "w-3/4"}`}
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : messages.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center px-6 pb-32">
               <motion.div
                 initial={{ opacity: 0, scale: 0.85, y: 8 }}
@@ -1242,33 +1253,59 @@ Ask me anything to get started!`;
             </div>
           ) : (
             <div className="max-w-3xl mx-auto py-4 px-4 md:px-6 space-y-2 pb-44 md:pb-52">
-              {messages.map((msg, i) =>
-                <ChatMessage
-                  key={i}
-                  messageIndex={i}
-                  role={msg.role}
-                  content={msg.content}
-                  images={msg.images}
-                  products={msg.products}
-                  attachedImages={msg.attachedImages}
-                  attachedFiles={msg.attachedFiles}
-                  isStreaming={isLoading && i === messages.length - 1 && msg.role === "assistant"}
-                  isThinking={isThinking && i === messages.length - 1 && msg.role === "assistant" && !msg.content}
-                  searchStatus={i === messages.length - 1 && msg.role === "assistant" ? searchStatus : undefined}
-                  liked={msg.liked}
-                  onLikeMessage={handleLikeMessage}
-                  onShare={undefined}
-                  onStructuredAction={handleStructuredAction}
-                  onEditUserMessageAt={msg.role === "user" ? handleEditUserMessageAt : undefined}
-                  isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
-                  researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
-                  researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
-                  senderName={members.length > 0 ? msg.senderName || undefined : undefined}
-                  senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
-                  isOtherMember={msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId}
-                  bubbleColor={msg.role === "user" && msg.user_id && msg.user_id !== chatUserId ? colorForUser(msg.user_id) : null} />
+              {messages.map((msg, i) => {
+                const isOther = msg.role === "user" && !!msg.user_id && !!chatUserId && msg.user_id !== chatUserId;
+                return (
+                <motion.div
+                  key={msg.id || `idx-${i}`}
+                  initial={{ opacity: 0, y: 10, x: isOther ? -8 : msg.role === "user" ? 8 : 0 }}
+                  animate={{ opacity: 1, y: 0, x: 0 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 26, mass: 0.6 }}
+                >
+                  <ChatMessage
+                    messageIndex={i}
+                    role={msg.role}
+                    content={msg.content}
+                    images={msg.images}
+                    products={msg.products}
+                    attachedImages={msg.attachedImages}
+                    attachedFiles={msg.attachedFiles}
+                    isStreaming={isLoading && i === messages.length - 1 && msg.role === "assistant"}
+                    isThinking={isThinking && i === messages.length - 1 && msg.role === "assistant" && !msg.content}
+                    searchStatus={i === messages.length - 1 && msg.role === "assistant" ? searchStatus : undefined}
+                    liked={msg.liked}
+                    onLikeMessage={handleLikeMessage}
+                    onShare={undefined}
+                    onStructuredAction={handleStructuredAction}
+                    onEditUserMessageAt={msg.role === "user" ? handleEditUserMessageAt : undefined}
+                    isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
+                    researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
+                    researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
+                    senderName={members.length > 0 ? msg.senderName || undefined : undefined}
+                    senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
+                    isOtherMember={isOther}
+                    bubbleColor={isOther ? colorForUser(msg.user_id!) : null}
+                  />
+                </motion.div>
+                );
+              })}
+              {/* System events (join/leave) */}
+              <AnimatePresence>
+                {systemEvents.slice(-3).map((ev) => (
+                  <motion.div
+                    key={ev.id}
+                    initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="flex justify-center my-2"
+                  >
+                    <span className="px-3 py-1 rounded-full bg-muted/60 text-[11px] text-muted-foreground">
+                      {ev.text}
+                    </span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
 
-              )}
               {/* Typing indicator */}
               {typingUsers.length > 0 && (
                 <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
