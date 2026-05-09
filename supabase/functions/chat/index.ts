@@ -292,11 +292,19 @@ function getNextFallbackModel(currentModel: string): string | null {
   return OPENROUTER_FALLBACK_MODELS.find((candidate) => candidate !== currentModel) ?? null;
 }
 
-function normalizeModelForProvider(model: string, provider: "openrouter" | "lemondata"): string {
+function normalizeModelForProvider(model: string, provider: "openrouter" | "lemondata" | "lovable"): string {
   // LemonData expects bare model IDs (e.g. "gemini-2.5-flash-lite"), not "google/gemini-2.5-flash-lite"
   if (provider === "lemondata") {
     const slash = model.indexOf("/");
     return slash === -1 ? model : model.slice(slash + 1);
+  }
+  if (provider === "lovable") {
+    // Remap unsupported models to the closest Lovable AI Gateway model
+    const m = model.toLowerCase();
+    if (m.startsWith("moonshotai/") || m.startsWith("kimi")) return "openai/gpt-5";
+    if (m.startsWith("anthropic/")) return "openai/gpt-5";
+    if (m === "google/gemini-2.5-flash-lite-preview-09-2025") return "google/gemini-2.5-flash-lite";
+    return model;
   }
   return model;
 }
