@@ -116,6 +116,11 @@ function getOpenRouterKey(): string | null {
   return Deno.env.get("OPENROUTER_API_KEY") || null;
 }
 
+// ── Lovable AI Gateway key ──
+function getLovableKey(): string | null {
+  return Deno.env.get("LOVABLE_API_KEY") || null;
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
