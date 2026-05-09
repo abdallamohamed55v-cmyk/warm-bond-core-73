@@ -506,7 +506,7 @@ const ChatPage = () => {
     const isDeepResearch = chatMode === "deep-research";
 
     await streamChat({
-      messages: allMessages, model: MEGSY_MODEL, searchEnabled: searchEnabled || isDeepResearch,
+      messages: allMessages, model: MEGSY_MODEL, tier: megsyTier, searchEnabled: searchEnabled || isDeepResearch,
       deepResearch: isDeepResearch,
       chatMode: chatMode,
       user_id: chatUserId || undefined,
