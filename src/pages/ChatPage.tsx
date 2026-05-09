@@ -1243,8 +1243,27 @@ Ask me anything to get started!`;
               >
                 <Globe className="w-[18px] h-[18px] text-foreground/85" strokeWidth={1.75} />
                 <span className="flex-1 text-[13.5px] text-foreground/85">Web search</span>
-                <div className={`w-9 h-5 rounded-full transition-colors flex items-center ${searchEnabled ? "bg-primary justify-end" : "bg-muted justify-start"}`}>
-                  <motion.div layout transition={iosSpring} className="w-4 h-4 rounded-full bg-foreground mx-0.5" />
+                <div
+                  className="relative shrink-0 rounded-[16px] transition-colors duration-200 ease-out"
+                  style={{
+                    width: 51,
+                    height: 31,
+                    backgroundColor: searchEnabled ? "#34C759" : "#e9e9eb",
+                  }}
+                >
+                  <motion.div
+                    layout
+                    transition={iosSpring}
+                    className="absolute top-1/2 rounded-full bg-white"
+                    style={{
+                      width: 27,
+                      height: 27,
+                      marginTop: -13.5,
+                      left: searchEnabled ? 22 : 2,
+                      boxShadow:
+                        "0px 3px 8px rgba(0,0,0,0.15), 0px 3px 1px rgba(0,0,0,0.06)",
+                    }}
+                  />
                 </div>
               </motion.button>
 
