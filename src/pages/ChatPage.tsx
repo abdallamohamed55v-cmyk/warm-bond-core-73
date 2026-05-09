@@ -478,7 +478,7 @@ const ChatPage = () => {
         window.dispatchEvent(new CustomEvent("megsy:conversations-changed"));
         // Attach id to last user message locally so dedup by id works for echo
         setMessages((prev) => {
-          const idx = (() => { for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].role === "user" && !prev[i].id) return i; } return -1; })();
+          const idx = prev.findIndex((m) => m.clientId === `user-${localTurnId}`);
           if (idx < 0) return prev;
           const next = [...prev]; next[idx] = { ...next[idx], id: insertedId, user_id: chatUserId || undefined }; return next;
         });
