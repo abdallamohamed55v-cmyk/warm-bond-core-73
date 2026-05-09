@@ -215,11 +215,62 @@ const MarkdownRenderer = ({ content, onLinkClick, onPreviewCode }: {
   </ReactMarkdown>
 );
 
+const SelectTextModal = ({ open, onClose, text, onCopy }: { open: boolean; onClose: () => void; text: string; onCopy: () => void }) => (
+  <AnimatePresence>
+    {open && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          transition={{ type: "spring", damping: 24, stiffness: 320 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-lg max-h-[80vh] flex flex-col rounded-3xl liquid-glass border border-border/30 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)] overflow-hidden"
+        >
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <div>
+              <h3 className="text-base font-semibold text-foreground">Select text</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Tap and hold to copy any part</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full hover:bg-accent/40 flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-3 border-t border-border/30">
+            <p className="text-[14px] leading-relaxed text-foreground whitespace-pre-wrap break-words select-text" style={{ WebkitUserSelect: "text", userSelect: "text" }}>
+              {text}
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-border/30">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors">Close</button>
+            <button onClick={onCopy} className="px-4 py-2 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-opacity flex items-center gap-2">
+              <Copy className="w-3.5 h-3.5" />
+              Copy all
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
 const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, senderName, senderAvatar, isOtherMember, bubbleColor }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState<{ code: string; lang: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectTextOpen, setSelectTextOpen] = useState(false);
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userBubbleRef = useRef<HTMLDivElement>(null);
 
@@ -256,16 +307,17 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
   }, [content]);
 
   const handleSelectText = useCallback(() => {
-    const el = userBubbleRef.current;
-    if (!el) return;
-    const selection = window.getSelection();
-    if (!selection) return;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    toast.success("Text selected");
+    setSelectTextOpen(true);
   }, []);
+
+  const handleCopyAllText = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  }, [content]);
 
   const handleLongPressStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     if (role !== "user") return;
@@ -443,6 +495,7 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
             )}
           </AnimatePresence>
         </div>
+        <SelectTextModal open={selectTextOpen} onClose={() => setSelectTextOpen(false)} text={content} onCopy={handleCopyAllText} />
       </div>
     );
   }
