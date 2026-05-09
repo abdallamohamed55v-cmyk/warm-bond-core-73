@@ -244,7 +244,8 @@ const ChatPage = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const title = firstMessage.slice(0, 50) || "New Chat";
-    const { data } = await supabase.from("conversations").insert({ title, mode: "chat", model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
+    const mode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
+    const { data } = await supabase.from("conversations").insert({ title, mode, model: MEGSY_MODEL, user_id: user.id } as any).select("id").single();
     if (data) {setConversationId(data.id);setConversationTitle(title);return data.id;}
     return null;
   };
@@ -281,6 +282,11 @@ const ChatPage = () => {
     setConversationId(id);
     setSearchStatus("");
     setPendingQuestions([]);
+    researchTasksRef.current = [];
+    setResearchPlan(null);
+    setResearchTasks([]);
+    setResearchSummary(null);
+    setClarifyQs(null);
     setLoadingMessages(true);
     setMessages([]);
     setSystemEvents([]);
