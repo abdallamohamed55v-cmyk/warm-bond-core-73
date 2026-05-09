@@ -183,10 +183,12 @@ const ChatPage = () => {
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setShowScrollBtn(distFromBottom > 200);
+    if (distFromBottom < 100) setNewMessagesCount(0);
   }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setNewMessagesCount(0);
   }, []);
 
   // Only auto-scroll on user's own new message, not during streaming
