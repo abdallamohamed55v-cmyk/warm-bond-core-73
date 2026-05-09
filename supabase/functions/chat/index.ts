@@ -725,6 +725,8 @@ CORE IDENTITY (NEVER VIOLATE):
         }));
       }
       if (mentionsIntegrations) selectedTools.push(...composioTools);
+      // Internal Megsy tools — always available when authenticated, low cost to expose
+      selectedTools.push(...megsyInternalTools);
     }
 
     // Trim messages aggressively for speed
