@@ -453,6 +453,7 @@ const ChatPage = () => {
       const insertedId = await saveMessage(resolvedConversationId, "user", userInput || `[${currentFiles.length} file(s) attached]`);
       if (insertedId) {
         ownInsertedIdsRef.current.add(insertedId);
+        window.dispatchEvent(new CustomEvent("megsy:conversations-changed"));
         // Attach id to last user message locally so dedup by id works for echo
         setMessages((prev) => {
           const idx = (() => { for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].role === "user" && !prev[i].id) return i; } return -1; })();
