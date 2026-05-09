@@ -474,7 +474,10 @@ serve(async (req) => {
 
     // Auto-select powerful model for complex tasks
     const needsComplexModel = !isCasualEarly && detectComplexTask(latestUserText, hasImages, isDeepResearch, isShopping, effectiveMode);
-    let modelId: string = requestedModel ?? (needsComplexModel ? COMPLEX_MODEL : DEFAULT_MODEL);
+    // Resolve Megsy tier (lite/pro/max) — gated by user plan. Falls back to user's preferred_tier from personalization.
+    const effectiveTier: MegsyTier = resolveTier(requestedTier ?? userPersonalization?.preferred_tier, userPlan);
+    // If caller passed an explicit raw model ID, honor it; otherwise pick from tier.
+    let modelId: string = requestedModel ?? pickModelForTier(effectiveTier, needsComplexModel);
     let apiUrl = OPENROUTER_URL;
     let apiKey = "";
     let usedKeyId: string | null = null;
