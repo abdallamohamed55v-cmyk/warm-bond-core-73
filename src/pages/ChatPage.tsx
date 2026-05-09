@@ -1438,6 +1438,70 @@ Ask me anything to get started!`;
                 <ChevronDown className="w-4 h-4 -rotate-90 text-muted-foreground" />
               </motion.button>
             </motion.div>
+          ) : plusView === "models" ? (
+            <motion.div
+              key="models"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 12 }}
+              transition={{ duration: 0.18 }}
+              className="flex flex-col"
+            >
+              <div className="flex items-center gap-1 px-1.5 pt-1 pb-2">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => setPlusView("main")}
+                  className="w-7 h-7 flex items-center justify-center rounded-full liquid-glass-hover"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="w-4 h-4 text-foreground/80" />
+                </motion.button>
+                <span className="text-[13px] font-semibold text-foreground/85">Choose Model</span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {([
+                  { id: "lite" as const, label: "Lite", desc: "Fast everyday answers", pro: false },
+                  { id: "pro" as const, label: "Pro", desc: "Smarter reasoning", pro: true },
+                  { id: "max" as const, label: "Max", desc: "1T+ flagship intelligence", pro: true },
+                ]).map(t => {
+                  const locked = t.pro && (userPlan === "free" || userPlan === "trial");
+                  const active = megsyTier === t.id;
+                  return (
+                    <motion.button
+                      key={t.id}
+                      whileTap={{ scale: 0.98 }}
+                      transition={iosSpring}
+                      onClick={() => {
+                        if (locked) {
+                          toast.info("Megsy " + t.label + " is available on premium plans only");
+                          return;
+                        }
+                        setMegsyTier(t.id);
+                        localStorage.setItem("megsy_tier", t.id);
+                        if (chatUserId) {
+                          supabase.from("ai_personalization").upsert({ user_id: chatUserId, preferred_tier: t.id } as any, { onConflict: "user_id" }).then(() => {});
+                        }
+                        setPlusView("main");
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left transition-colors ${active ? "bg-primary/10 border border-primary/30" : "liquid-glass-hover border border-transparent"}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13.5px] font-semibold text-foreground/90">{t.label}</span>
+                          {t.pro && (
+                            <span className="text-[8px] font-bold px-1 py-px rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">PRO</span>
+                          )}
+                          {locked && <span className="text-[10px] opacity-70">🔒</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-tight">{t.desc}</div>
+                      </div>
+                      {active && <Check className="w-4 h-4 text-primary shrink-0" strokeWidth={2.5} />}
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </motion.div>
           ) : (
             <motion.div
               key="tools"
