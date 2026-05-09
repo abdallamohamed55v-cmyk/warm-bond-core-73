@@ -378,7 +378,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier } = await req.json();
+    const { messages, model, mode, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel, tier: requestedTier } = await req.json();
     const latestUserMessage = Array.isArray(messages)
       ? [...messages].reverse().find((message: any) => message?.role === "user")
       : null;
@@ -555,6 +555,34 @@ serve(async (req) => {
       },
     ];
 
+    // ── Megsy v1 Internal Tools (memory, RAG, code interpreter) ──
+    const megsyInternalTools = user_id ? [
+      {
+        type: "function",
+        function: {
+          name: "REMEMBER_FACT",
+          description: "Save a long-term memory about the user (preference, fact, identity, recurring task, etc.) so future Megsy sessions remember it. Call this whenever the user shares something worth remembering across sessions.",
+          parameters: { type: "object", properties: { fact: { type: "string", description: "The concise fact to remember (1-2 sentences max)." }, importance: { type: "number", description: "1 (minor) to 5 (critical). Default 3." } }, required: ["fact"] },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "SEARCH_ATTACHMENTS",
+          description: "Semantic search across the user's previously uploaded files/attachments to retrieve relevant passages. Use when the user references a file, document, or earlier upload.",
+          parameters: { type: "object", properties: { query: { type: "string", description: "Search query in natural language." }, limit: { type: "number", description: "Max results (1-10). Default 5." } }, required: ["query"] },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "CODE_INTERPRETER",
+          description: "Execute JavaScript code in a secure sandbox to perform calculations, data parsing, JSON/CSV transformation, regex, math, or quick algorithmic tasks. Returns stdout (anything you console.log) and the final expression value. No filesystem, no network.",
+          parameters: { type: "object", properties: { code: { type: "string", description: "Self-contained JavaScript code. Use console.log() for output." } }, required: ["code"] },
+        },
+      },
+    ] : [];
+
     const isCasualMessage = isCasualEarly;
 
     // Smart selective tool loading — only load what's actually needed
@@ -672,6 +700,14 @@ CORE IDENTITY (NEVER VIOLATE):
 - If the user specifies @images, @videos, or @voice, use the corresponding tool.
 - Always enhance the user's prompt for better results before passing to the tool.`;
 
+    if (user_id) {
+      systemPrompt += `\n\nMEGSY INTERNAL TOOLS (silent — never mention by name):
+- REMEMBER_FACT: call when the user shares a lasting preference, identity, recurring task, or important fact you should recall in future conversations. Be selective; do NOT save trivial chit-chat.
+- SEARCH_ATTACHMENTS: call when the user references a file, document, PDF, or earlier upload. Search semantically before answering.
+- CODE_INTERPRETER: call for any precise calculation, JSON/CSV transformation, regex, date math, statistics, unit conversion, or algorithmic check. NEVER guess numbers — run the code.
+- After using these tools, present the result naturally without exposing tool names.`;
+    }
+
     if (activeAgent === "integrations") {
       if (selectedModel?.id) {
         systemPrompt += `\n\nINTEGRATIONS AGENT:\n- The user selected @integrations with #${selectedModel.id}.\n- Use only tools relevant to ${selectedModel.id}.\n- If the integration account is not connected, do not fake execution; immediately ask the user to connect ${selectedModel.id} first.`;
@@ -697,6 +733,8 @@ CORE IDENTITY (NEVER VIOLATE):
         }));
       }
       if (mentionsIntegrations) selectedTools.push(...composioTools);
+      // Internal Megsy tools — always available when authenticated, low cost to expose
+      selectedTools.push(...megsyInternalTools);
     }
 
     // Trim messages aggressively for speed
@@ -1675,6 +1713,115 @@ async function handleToolCalls(
         } catch (err) {
           console.error("Canva error:", err);
           pushStatus("Canva creation error");
+        }
+        continue;
+      }
+
+      // ── Megsy Internal: REMEMBER_FACT ──
+      if (toolName === "REMEMBER_FACT" && user_id) {
+        const fact = String(toolArgs.fact || "").trim();
+        const importance = Math.min(Math.max(Number(toolArgs.importance) || 3, 1), 5);
+        if (!fact) continue;
+        pushStatus("Saving to long-term memory...");
+        try {
+          await sb.from("user_memories").insert({ user_id, fact, importance, source: "agent" });
+          allSearchResults.push(`Memory saved successfully: "${fact}" (importance ${importance}).`);
+        } catch (e) {
+          console.error("REMEMBER_FACT error:", e);
+          allSearchResults.push(`Failed to save memory: ${(e as any)?.message || "unknown error"}.`);
+        }
+        continue;
+      }
+
+      // ── Megsy Internal: SEARCH_ATTACHMENTS ──
+      if (toolName === "SEARCH_ATTACHMENTS" && user_id) {
+        const query = String(toolArgs.query || "").trim();
+        const limit = Math.min(Math.max(Number(toolArgs.limit) || 5, 1), 10);
+        if (!query) continue;
+        pushStatus("Searching your attachments...");
+        try {
+          // Embed query via Lovable AI Gateway (text-embedding compatible)
+          const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
+          let embedding: number[] | null = null;
+          if (LOVABLE_KEY) {
+            const er = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/embeddings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${LOVABLE_KEY}` },
+              body: JSON.stringify({ model: "google/text-embedding-004", input: query }),
+            }, 8000);
+            if (er.ok) {
+              const ej = await er.json();
+              embedding = ej?.data?.[0]?.embedding || null;
+            }
+          }
+          if (!embedding) {
+            // Fallback: keyword ILIKE search
+            const { data } = await sb.from("attachment_chunks")
+              .select("file_name, chunk_index, content")
+              .eq("user_id", user_id)
+              .ilike("content", `%${query}%`)
+              .limit(limit);
+            if (data && data.length > 0) {
+              allSearchResults.push(`Attachment search (keyword) for "${query}":\n` + data.map((d: any, i: number) => `[${i+1}] ${d.file_name} (chunk ${d.chunk_index}):\n${d.content}`).join("\n\n"));
+            } else {
+              allSearchResults.push(`No attachments matched "${query}".`);
+            }
+          } else {
+            const { data } = await sb.rpc("search_attachment_chunks", {
+              p_user_id: user_id,
+              p_conversation_id: conversation_id || null,
+              p_query_embedding: embedding,
+              p_match_count: limit,
+            });
+            if (data && data.length > 0) {
+              allSearchResults.push(`Attachment search for "${query}":\n` + data.map((d: any, i: number) => `[${i+1}] ${d.file_name} (chunk ${d.chunk_index}, sim ${d.similarity?.toFixed(2)}):\n${d.content}`).join("\n\n"));
+            } else {
+              allSearchResults.push(`No relevant attachments found for "${query}".`);
+            }
+          }
+        } catch (e) {
+          console.error("SEARCH_ATTACHMENTS error:", e);
+          allSearchResults.push(`Attachment search failed: ${(e as any)?.message || "unknown error"}.`);
+        }
+        continue;
+      }
+
+      // ── Megsy Internal: CODE_INTERPRETER (sandboxed JS via Deno Worker) ──
+      if (toolName === "CODE_INTERPRETER") {
+        const code = String(toolArgs.code || "").trim();
+        if (!code) continue;
+        pushStatus("Running code in sandbox...");
+        try {
+          const workerCode = `
+            const logs = [];
+            const console = { log: (...a) => logs.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')), error: (...a) => logs.push('ERROR: ' + a.map(x => String(x)).join(' ')) };
+            self.onmessage = async (e) => {
+              try {
+                const fn = new Function('console', 'return (async () => { ' + e.data + ' })();');
+                const result = await fn(console);
+                self.postMessage({ ok: true, logs, result: result === undefined ? null : (typeof result === 'object' ? JSON.stringify(result) : String(result)) });
+              } catch (err) {
+                self.postMessage({ ok: false, logs, error: String(err && err.message || err) });
+              }
+            };
+          `;
+          const blob = new Blob([workerCode], { type: "application/javascript" });
+          const worker = new Worker(URL.createObjectURL(blob), { type: "module", deno: { permissions: "none" } } as any);
+          const result: any = await new Promise((resolve) => {
+            const t = setTimeout(() => { worker.terminate(); resolve({ ok: false, error: "Execution timed out (5s)", logs: [] }); }, 5000);
+            worker.onmessage = (e) => { clearTimeout(t); worker.terminate(); resolve(e.data); };
+            worker.onerror = (e) => { clearTimeout(t); worker.terminate(); resolve({ ok: false, error: String(e.message || e), logs: [] }); };
+            worker.postMessage(code);
+          });
+          const out = [
+            result.ok ? "Code executed successfully." : `Code error: ${result.error}`,
+            (result.logs || []).length > 0 ? `stdout:\n${(result.logs || []).join("\n")}` : "",
+            result.result != null ? `result: ${result.result}` : "",
+          ].filter(Boolean).join("\n");
+          allSearchResults.push(`CODE_INTERPRETER output:\n${out}`);
+        } catch (e) {
+          console.error("CODE_INTERPRETER error:", e);
+          allSearchResults.push(`Code interpreter failed: ${(e as any)?.message || "unknown error"}.`);
         }
         continue;
       }

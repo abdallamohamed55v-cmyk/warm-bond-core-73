@@ -18,6 +18,7 @@ export async function streamChat({
   deepResearch,
   chatMode,
   user_id,
+  conversation_id,
   computerUseEnabled,
   activeAgent,
   selectedModel,
@@ -38,6 +39,7 @@ export async function streamChat({
   deepResearch?: boolean;
   chatMode?: string;
   user_id?: string;
+  conversation_id?: string;
   computerUseEnabled?: boolean;
   activeAgent?: string;
   selectedModel?: { id: string; cost: number };
@@ -59,7 +61,7 @@ export async function streamChat({
         apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ messages, model, tier, searchEnabled, deepResearch, chatMode, user_id, computerUseEnabled, activeAgent, selectedModel }),
+      body: JSON.stringify({ messages, model, tier, searchEnabled, deepResearch, chatMode, user_id, conversation_id, computerUseEnabled, activeAgent, selectedModel }),
       signal,
     });
 
