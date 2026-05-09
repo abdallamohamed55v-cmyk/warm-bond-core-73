@@ -551,6 +551,31 @@ const ChatPage = () => {
       onBrowser: () => {
         // Browser state no longer tracked in UI
       },
+      onEvent: (payload: any) => {
+        const ev = payload?.event;
+        if (ev === "plan_detailed") {
+          setResearchPlan({ goal: payload.goal || "", steps: Array.isArray(payload.steps) ? payload.steps : [] });
+        } else if (ev === "clarify_questions") {
+          if (Array.isArray(payload.questions)) setClarifyQs(payload.questions);
+        } else if (ev === "task_start") {
+          const t: ResearchTask = { id: payload.id, kind: payload.kind || "search", label: payload.label || "Working…", target: payload.target, status: "running" };
+          setResearchTasks((prev) => [...prev.filter((x) => x.id !== t.id), t]);
+        } else if (ev === "task_update") {
+          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, label: payload.label || x.label, target: payload.target ?? x.target } : x));
+        } else if (ev === "task_done") {
+          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, status: payload.error ? "error" : "done", summary: payload.summary } : x));
+        } else if (ev === "final_summary") {
+          setResearchSummary({
+            what_i_did: payload.what_i_did,
+            key_findings: payload.key_findings,
+            sources_count: payload.sources_count,
+            channels: payload.channels,
+            duration_ms: payload.duration_ms,
+            confidence: payload.confidence,
+            confidence_reason: payload.confidence_reason,
+          });
+        }
+      },
       onDone: async () => {
         setIsLoading(false);setIsThinking(false);setSearchStatus("");
         isSubmittingRef.current = false;
