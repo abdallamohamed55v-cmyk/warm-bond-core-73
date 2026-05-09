@@ -1405,6 +1405,7 @@ async function handleToolCalls(
 
         if (searchResult.status !== "fulfilled" || !searchResult.value.ok) {
           pushStatus("Search failed, continuing with available info");
+          emitTaskDone(searchTaskId, undefined, "search_failed");
           continue;
         }
 
