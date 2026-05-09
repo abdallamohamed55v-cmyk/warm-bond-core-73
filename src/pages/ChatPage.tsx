@@ -630,6 +630,10 @@ const ChatPage = () => {
       onDone: async () => {
         setIsLoading(false);setIsThinking(false);setSearchStatus("");
         isSubmittingRef.current = false;
+        if (isDeepResearch && researchTasksRef.current.some((task) => task.status === "running")) {
+          researchTasksRef.current = researchTasksRef.current.map((task) => task.status === "running" ? { ...task, status: "done" } : task);
+          setResearchTasks(researchTasksRef.current);
+        }
         if (presenceChannelRef.current && chatUserId) {
           presenceChannelRef.current.send({ type: "broadcast", event: "ai_busy", payload: { user_id: chatUserId, busy: false } });
         }
@@ -652,6 +656,7 @@ const ChatPage = () => {
           });
           const dbMode = chatMode === "deep-research" ? "research" : (chatMode === "learning" ? "learning" : (chatMode === "shopping" ? "shopping" : "chat"));
           await supabase.from("conversations").update({ updated_at: new Date().toISOString(), mode: dbMode } as any).eq("id", resolvedConversationId);
+          window.dispatchEvent(new CustomEvent("megsy:conversations-changed"));
         }
       },
       onError: (err) => {
