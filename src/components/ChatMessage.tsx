@@ -10,6 +10,9 @@ import InfoCards from "./InfoCards";
 import CodePreviewModal from "./CodePreviewModal";
 import ImagePreviewModal from "./ImagePreviewModal";
 import DeepResearchCard from "./chat/DeepResearchCard";
+import ResearchTaskTimeline, { type ResearchTask } from "./research/ResearchTaskTimeline";
+import ResearchPlanCard, { type ResearchPlan } from "./research/ResearchPlanCard";
+import ResearchSummaryCard, { type ResearchSummary } from "./research/ResearchSummaryCard";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
@@ -32,6 +35,9 @@ interface ChatMessageProps {
   isDeepResearch?: boolean;
   researchQuery?: string;
   researchSessionKey?: string;
+  researchPlan?: ResearchPlan | null;
+  researchTasks?: ResearchTask[];
+  researchSummary?: ResearchSummary | null;
   senderName?: string | null;
   senderAvatar?: string | null;
   isOtherMember?: boolean;
@@ -364,7 +370,7 @@ const renderTextWithMentions = (text: string) => {
   );
 };
 
-const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, senderName, senderAvatar, isOtherMember, bubbleColor, messageId, reactions, onToggleReaction, currentUserId, readers, showReaders }: ChatMessageProps) => {
+const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, images, products, attachedImages, attachedFiles, onLike, onLikeMessage, liked, onShare, onStructuredAction, searchStatus, onEditUserMessage, onEditUserMessageAt, isDeepResearch, researchQuery, researchSessionKey, researchPlan, researchTasks, researchSummary, senderName, senderAvatar, isOtherMember, bubbleColor, messageId, reactions, onToggleReaction, currentUserId, readers, showReaders }: ChatMessageProps) => {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState<{ code: string; lang: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -612,9 +618,20 @@ const ChatMessage = ({ role, content, messageIndex, isStreaming, isThinking, ima
       (isDeepResearch === true));
   const showResearchCard = looksLikeResearch && !isStreaming && content.trim().length > 200;
 
+  const showResearchPanels = role === "assistant" && isDeepResearch && (researchPlan || (researchTasks && researchTasks.length > 0) || researchSummary);
+
   return (
     <div className="mb-6 relative">
-      {isThinking && !content ? (
+      {showResearchPanels && (
+        <div className="space-y-2">
+          {researchPlan && <ResearchPlanCard plan={researchPlan} />}
+          {researchTasks && researchTasks.length > 0 && (
+            <ResearchTaskTimeline tasks={researchTasks} isActive={!!isStreaming || (!!isThinking && !content)} />
+          )}
+          {researchSummary && !isStreaming && <ResearchSummaryCard summary={researchSummary} />}
+        </div>
+      )}
+      {isThinking && !content && !showResearchPanels ? (
         <ThinkingLoader searchStatus={searchStatus} />
       ) : showResearchCard ? (
         <DeepResearchCard

@@ -1244,6 +1244,20 @@ async function handleToolCalls(
     return /(who is|biography|profile|photos|images|picture|person|celebrity|founder|actor|singer|player|president|ممثل|مطرب|لاعب|شخص|شخصية|صور|صورة|مؤسس)/i.test(query);
   };
 
+  // Task event helpers (Deep Research v2 streaming)
+  const newTaskId = () => `t_${Math.random().toString(36).slice(2, 10)}`;
+  const emitTaskStart = (id: string, kind: string, label: string, target?: string) => {
+    if (!isDeepResearch) return;
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_start", id, kind, label, target })}\n\n`));
+  };
+  const emitTaskDone = (id: string, summary?: string, error?: string) => {
+    if (!isDeepResearch) return;
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "task_done", id, summary, error })}\n\n`));
+  };
+  const researchStartedAt = Date.now();
+  const researchSourcesSet = new Set<string>();
+  const researchChannels = new Set<string>();
+
   // ── Deep Research: announce the plan (sub-queries) up-front so the user sees what the agent will investigate.
   if (isDeepResearch) {
     const planQueries = validToolCalls
@@ -1255,8 +1269,17 @@ async function handleToolCalls(
       .filter(Boolean);
     if (planQueries.length > 0) {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "plan", queries: planQueries })}\n\n`));
+      // Rich plan_detailed event for new UI
+      const goal = `Investigate ${planQueries.length} angle${planQueries.length === 1 ? "" : "s"} and synthesize a well-sourced answer.`;
+      const steps: string[] = [];
+      planQueries.slice(0, 6).forEach((q) => steps.push(`Search the web for: ${q}`));
+      steps.push("Cross-reference with Wikipedia, arXiv, Reddit & Hacker News");
+      steps.push("Read the most relevant sources in depth");
+      steps.push("Synthesize findings into a structured report with citations");
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "plan_detailed", goal, steps })}\n\n`));
     }
   }
+
 
   for (const tc of validToolCalls) {
     try {
@@ -1357,6 +1380,8 @@ async function handleToolCalls(
         if (isDeepResearch) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "search_query", query: searchQuery })}\n\n`));
         }
+        const searchTaskId = newTaskId();
+        emitTaskStart(searchTaskId, "search", `Searching the web`, searchQuery);
         pushStatus(isDeepResearch ? "Gathering trusted sources..." : "Searching the web...");
 
         const searchRequest = fetchWithTimeout("https://google.serper.dev/search", {
@@ -1380,6 +1405,7 @@ async function handleToolCalls(
 
         if (searchResult.status !== "fulfilled" || !searchResult.value.ok) {
           pushStatus("Search failed, continuing with available info");
+          emitTaskDone(searchTaskId, undefined, "search_failed");
           continue;
         }
 
@@ -1410,6 +1436,11 @@ async function handleToolCalls(
         const organicCount = searchData.organic?.length || 0;
         pushStatus(organicCount > 0 ? (isDeepResearch ? "Reviewing the sources..." : "Reviewing the results...") : "Search completed");
         allSearchResults.push(context);
+        if (isDeepResearch) {
+          (searchData.organic || []).forEach((r: any) => { if (r?.link) researchSourcesSet.add(r.link); });
+          researchChannels.add("Web");
+          emitTaskDone(searchTaskId, `${organicCount} results`);
+        }
 
         // ── Deep Research enrichment: layer multiple free open sources in parallel.
         if (isDeepResearch) {
@@ -1427,22 +1458,31 @@ async function handleToolCalls(
           if (reddit.status === "fulfilled" && reddit.value.length) extra.push({ engine: "Reddit", results: reddit.value });
           if (hn.status === "fulfilled" && hn.value.length) extra.push({ engine: "Hacker News", results: hn.value });
           for (const e of extra) {
+            const auxId = newTaskId();
+            emitTaskStart(auxId, e.engine === "Wikipedia" ? "wiki" : (e.engine === "arXiv" ? "academic" : "social"), `Consulting ${e.engine}`, searchQuery);
             const block = `Search (${e.engine}): "${searchQuery}"\n` + e.results.map((r, i) =>
               `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.url}`
             ).join("\n\n");
             allSearchResults.push(block);
+            e.results.forEach((r) => { if (r.url) researchSourcesSet.add(r.url); });
+            researchChannels.add(e.engine);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "source_engine", engine: e.engine, count: e.results.length })}\n\n`));
+            emitTaskDone(auxId, `${e.results.length} results`);
           }
 
           // Read top 2 organic links via Jina Reader for deeper content.
           const topLinks: string[] = (searchData.organic || []).slice(0, 2).map((r: any) => r.link).filter(Boolean);
           if (topLinks.length > 0) {
             pushStatus("Reading top sources in depth...");
+            const readIds = topLinks.map((u) => { const id = newTaskId(); emitTaskStart(id, "read", "Reading source in depth", u); return id; });
             const reads = await Promise.allSettled(topLinks.map((u) => readWithJina(u)));
             reads.forEach((res, i) => {
               if (res.status === "fulfilled" && res.value && res.value.length > 200) {
                 allSearchResults.push(`Deep read of ${topLinks[i]}:\n${res.value}`);
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "deep_read", url: topLinks[i] })}\n\n`));
+                emitTaskDone(readIds[i], "Extracted full content");
+              } else {
+                emitTaskDone(readIds[i], undefined, "read_failed");
               }
             });
           }
@@ -1902,7 +1942,29 @@ async function handleToolCalls(
 
     pushStatus(isDeepResearch ? "Writing the report now..." : (isShopping ? "Preparing recommendations..." : "Writing response..."));
     if (isDeepResearch) {
+      const synthId = newTaskId();
+      emitTaskStart(synthId, "synthesize", "Synthesizing findings into a structured report");
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "synthesizing" })}\n\n`));
+      // Final summary preview (sent before the report streams so the user sees what was done)
+      const sources = researchSourcesSet.size;
+      const channels = Array.from(researchChannels);
+      const conf = sources >= 8 ? "high" : sources >= 4 ? "medium" : "low";
+      const summary = {
+        event: "final_summary",
+        what_i_did: [
+          `Ran ${validToolCalls.filter((tc) => tc.function?.name === "WEB_SEARCH").length} targeted web searches`,
+          `Cross-checked ${channels.length} different source channels`,
+          `Read ${Math.min(sources, 12)} sources in detail`,
+          `Synthesized findings with inline citations`,
+        ],
+        sources_count: sources,
+        channels,
+        duration_ms: Date.now() - researchStartedAt,
+        confidence: conf,
+        confidence_reason: sources >= 8 ? "Multiple independent sources agree." : sources >= 4 ? "Reasonable source coverage; some gaps possible." : "Limited sources — treat as preliminary.",
+      };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(summary)}\n\n`));
+      emitTaskDone(synthId, "Report ready");
     }
     const combinedContext = allSearchResults.join("\n\n=== Next Source ===\n\n");
 

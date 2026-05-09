@@ -15,6 +15,11 @@ import FancyButton from "@/components/FancyButton";
 import type { AgentDef, AgentModel } from "@/lib/agentRegistry";
 
 import { streamChat } from "@/lib/streamChat";
+import DeepResearchToggle from "@/components/research/DeepResearchToggle";
+import ClarifyDialog, { type ClarifyQuestion } from "@/components/research/ClarifyDialog";
+import type { ResearchTask } from "@/components/research/ResearchTaskTimeline";
+import type { ResearchPlan } from "@/components/research/ResearchPlanCard";
+import type { ResearchSummary } from "@/components/research/ResearchSummaryCard";
 import ConnectorsDialog from "@/components/ConnectorsDialog";
 import GlowButton from "@/components/GlowButton";
 
@@ -114,6 +119,10 @@ const ChatPage = () => {
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [attachedFiles, setAttachedFiles] = useState<{name: string;type: string;data: string;}[]>([]);
   const [searchStatus, setSearchStatus] = useState<string>("");
+  const [researchPlan, setResearchPlan] = useState<ResearchPlan | null>(null);
+  const [researchTasks, setResearchTasks] = useState<ResearchTask[]>([]);
+  const [researchSummary, setResearchSummary] = useState<ResearchSummary | null>(null);
+  const [clarifyQs, setClarifyQs] = useState<ClarifyQuestion[] | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareMode, setShareMode] = useState<"private" | "public">("public");
   const [isShared, setIsShared] = useState(false);
@@ -411,6 +420,10 @@ const ChatPage = () => {
     setAttachedFiles([]);
     setIsLoading(true);setIsThinking(true);
     setPendingQuestions([]);
+    setResearchPlan(null);
+    setResearchTasks([]);
+    setResearchSummary(null);
+    setClarifyQs(null);
 
     const conversationPromise = createOrUpdateConversation(userInput || "File analysis").catch(() => null);
     void conversationPromise.then(async (resolvedConversationId) => {
@@ -541,6 +554,31 @@ const ChatPage = () => {
       },
       onBrowser: () => {
         // Browser state no longer tracked in UI
+      },
+      onEvent: (payload: any) => {
+        const ev = payload?.event;
+        if (ev === "plan_detailed") {
+          setResearchPlan({ goal: payload.goal || "", steps: Array.isArray(payload.steps) ? payload.steps : [] });
+        } else if (ev === "clarify_questions") {
+          if (Array.isArray(payload.questions)) setClarifyQs(payload.questions);
+        } else if (ev === "task_start") {
+          const t: ResearchTask = { id: payload.id, kind: payload.kind || "search", label: payload.label || "Working…", target: payload.target, status: "running" };
+          setResearchTasks((prev) => [...prev.filter((x) => x.id !== t.id), t]);
+        } else if (ev === "task_update") {
+          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, label: payload.label || x.label, target: payload.target ?? x.target } : x));
+        } else if (ev === "task_done") {
+          setResearchTasks((prev) => prev.map((x) => x.id === payload.id ? { ...x, status: payload.error ? "error" : "done", summary: payload.summary } : x));
+        } else if (ev === "final_summary") {
+          setResearchSummary({
+            what_i_did: payload.what_i_did,
+            key_findings: payload.key_findings,
+            sources_count: payload.sources_count,
+            channels: payload.channels,
+            duration_ms: payload.duration_ms,
+            confidence: payload.confidence,
+            confidence_reason: payload.confidence_reason,
+          });
+        }
       },
       onDone: async () => {
         setIsLoading(false);setIsThinking(false);setSearchStatus("");
@@ -1577,6 +1615,9 @@ Ask me anything to get started!`;
                     isDeepResearch={chatMode === "deep-research" && msg.role === "assistant"}
                     researchQuery={msg.role === "assistant" && i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].content : undefined}
                     researchSessionKey={msg.role === "assistant" && conversationId ? `conv_${conversationId}_${i}` : undefined}
+                    researchPlan={msg.role === "assistant" && i === messages.length - 1 ? researchPlan : null}
+                    researchTasks={msg.role === "assistant" && i === messages.length - 1 ? researchTasks : []}
+                    researchSummary={msg.role === "assistant" && i === messages.length - 1 ? researchSummary : null}
                     senderName={members.length > 0 ? msg.senderName || undefined : undefined}
                     senderAvatar={members.length > 0 ? msg.senderAvatar || undefined : undefined}
                     isOtherMember={isOther}
@@ -1662,6 +1703,17 @@ Ask me anything to get started!`;
         {/* Bottom input - floating with blur */}
         <div className="fixed inset-x-0 bottom-0 z-30 px-3 md:px-6 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 pointer-events-none">
             <div className="max-w-3xl mx-auto space-y-2 pointer-events-auto">
+              {/* Deep Research quick toggle */}
+              <div className="flex items-center gap-2">
+                <DeepResearchToggle
+                  active={chatMode === "deep-research"}
+                  onToggle={() => {
+                    setChatMode((prev) => prev === "deep-research" ? "normal" : "deep-research");
+                    setSearchEnabled(true);
+                    setPlusMenuOpen(false);
+                  }}
+                />
+              </div>
               {/* Mode badge above input */}
               <AnimatePresence>
                 {chatMode !== "normal" && (
